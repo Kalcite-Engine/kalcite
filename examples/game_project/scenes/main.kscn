@@ -1,3 +1,11 @@
-@node Main
-@node Main.Player
-@signal Main.Player.moved -> Main.on_player_moved
+[scene]
+root = "Main"
+
+[node "Main"]
+script = "Main"
+
+[node "Player" parent="Main"]
+script = "Player"
+speed = 2
+
+@signal Main/Player.moved -> Main.on_player_moved
