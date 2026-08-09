@@ -120,9 +120,10 @@ fn write_project_data(
     fs::write(
         root.join("src/project_data.rs"),
         format!(
-            "#[used]\npub static ENTRY_SCENE: [u8; {}] = *include_bytes!(\"entry.ksc2\");\n#[used]\npub static ASSET_PACK: [u8; {}] = *include_bytes!(\"assets.kap\");\n",
+            "#[used]\npub static ENTRY_SCENE: [u8; {}] = *include_bytes!(\"entry.ksc2\");\n#[used]\npub static ASSET_PACK: [u8; {}] = *include_bytes!(\"assets.kap\");\n{}",
             scene.len(),
-            assets.len()
+            assets.len(),
+            ASSET_RUNTIME.trim_start_matches("#![no_std]")
         ),
     )
 }
@@ -218,6 +219,7 @@ fn main() {
 "###;
 
 const RUNTIME: &str = include_str!("../../kalcite-runtime-core/src/pool.rs");
+const ASSET_RUNTIME: &str = include_str!("../../kalcite-engine-assets/src/lib.rs");
 
 // Small Rust transcription of the public EADK ABI used by the engine. Keeping
 // this layer separate makes it obvious which calls cross into Epsilon.
@@ -511,10 +513,10 @@ impl ClipRect {
 }
 
 #[derive(Clone,Copy,PartialEq,Eq)]
-enum DrawKind { None, Rect, Text }
+enum DrawKind { None, Rect, Text, Sprite }
 #[derive(Clone,Copy,PartialEq,Eq)]
-struct DrawCommand { kind:DrawKind,bounds:ClipRect,color:u16,bg:u16,text:[u8;64],text_len:u8 }
-impl DrawCommand { const EMPTY:Self=Self{kind:DrawKind::None,bounds:ClipRect::EMPTY,color:0,bg:0,text:[0;64],text_len:0}; }
+struct DrawCommand { kind:DrawKind,bounds:ClipRect,color:u16,bg:u16,text:[u8;64],text_len:u8,asset:&'static[u8],source:ClipRect,origin_x:i16,origin_y:i16 }
+impl DrawCommand { const EMPTY:Self=Self{kind:DrawKind::None,bounds:ClipRect::EMPTY,color:0,bg:0,text:[0;64],text_len:0,asset:&[],source:ClipRect::EMPTY,origin_x:0,origin_y:0}; }
 
 struct Renderer {
     current:[DrawCommand;MAX_DRAW_COMMANDS], previous:[DrawCommand;MAX_DRAW_COMMANDS],
@@ -548,7 +550,17 @@ impl Renderer {
                 if b.y<0||b.y+SMALL_FONT_H>SCREEN_H||c.text_len==0{return;}
                 eadk::draw_string(c.text.as_ptr(),eadk::Point{x:b.x as u16,y:b.y as u16},false,c.color,c.bg);
             }
+            DrawKind::Sprite=>Self::render_sprite(c,clip),
             DrawKind::None=>{}
+        }
+    }
+    fn render_sprite(c:DrawCommand,clip:ClipRect){
+        let data=c.asset;if data.len()<4{return;}let width=u16::from_le_bytes([data[0],data[1]]) as usize;let mut pixel=0usize;let mut at=4usize;
+        while at+4<=data.len(){let count=data[at] as usize;let transparent=data[at+1]!=0;let color=u16::from_le_bytes([data[at+2],data[at+3]]);at+=4;if count==0{return;}
+            let row=pixel/width;let col=pixel%width;pixel+=count;if transparent||row<c.source.y as usize||row>=(c.source.y+c.source.h) as usize{continue;}
+            let start=col.max(c.source.x as usize);let end=(col+count).min((c.source.x+c.source.w) as usize);if end<=start{continue;}
+            let dy=c.origin_y+row as i16-c.source.y;if dy<clip.y||dy>=clip.y+clip.h{continue;}let dx=c.origin_x+start as i16-c.source.x;let dx1=c.origin_x+end as i16-c.source.x;
+            let x0=dx.max(clip.x).max(0);let x1=dx1.min(clip.x+clip.w).min(SCREEN_W);if x1>x0{eadk::push_rect_uniform(eadk::Rect{x:x0 as u16,y:dy as u16,width:(x1-x0) as u16,height:1},color);}
         }
     }
     fn full_present(&mut self){
@@ -591,12 +603,20 @@ impl Renderer {
     }
 }
 static mut RENDERER:Renderer=Renderer::new();
+static mut CAMERA_X:i16=0;static mut CAMERA_Y:i16=0;
+fn world_to_screen(x:i16,y:i16)->(i16,i16){unsafe{(x.saturating_sub(CAMERA_X),y.saturating_sub(CAMERA_Y))}}
 
 pub struct Draw;
 impl Draw {
+    pub fn camera(x:i16,y:i16){unsafe{CAMERA_X=x;CAMERA_Y=y;}}
     #[inline] pub fn begin_frame(){unsafe{RENDERER.begin();}}
     #[inline] pub fn clear(color:Color){unsafe{RENDERER.background=color.0;}}
-    pub fn rect(x:i16,y:i16,width:i16,height:i16,color:Color){let b=ClipRect::clipped(x,y,width,height);unsafe{RENDERER.push(DrawCommand{kind:DrawKind::Rect,bounds:b,color:color.0,bg:0,text:[0;64],text_len:0});}}
+    pub fn rect(x:i16,y:i16,width:i16,height:i16,color:Color){let b=ClipRect::clipped(x,y,width,height);unsafe{RENDERER.push(DrawCommand{kind:DrawKind::Rect,bounds:b,color:color.0,bg:0,text:[0;64],text_len:0,asset:&[],source:ClipRect::EMPTY,origin_x:0,origin_y:0});}}
+    pub fn sprite(name:&str,x:i16,y:i16){let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK)else{return;};let Some(asset)=pack.get_named(name)else{return;};let(x,y)=world_to_screen(x,y);Self::sprite_data(asset.data,x,y,0,0,u16::MAX,u16::MAX);}
+    pub fn sprite_region(name:&str,x:i16,y:i16,sx:u16,sy:u16,w:u16,h:u16){let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK)else{return;};let Some(asset)=pack.get_named(name)else{return;};let(x,y)=world_to_screen(x,y);Self::sprite_data(asset.data,x,y,sx,sy,w,h);}
+    pub fn sprite_frame(sheet:&str,frame:u16,x:i16,y:i16){let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK)else{return;};let Some(meta)=pack.get_named(sheet)else{return;};if meta.kind!=3||meta.data.len()!=12{return;}let image=u64::from_le_bytes(meta.data[..8].try_into().unwrap());let fw=u16::from_le_bytes(meta.data[8..10].try_into().unwrap());let fh=u16::from_le_bytes(meta.data[10..12].try_into().unwrap());let Some(sprite)=pack.get(image)else{return;};if sprite.data.len()<4||fw==0||fh==0{return;}let width=u16::from_le_bytes([sprite.data[0],sprite.data[1]]);let cols=width/fw;if cols==0{return;}let(x,y)=world_to_screen(x,y);Self::sprite_data(sprite.data,x,y,(frame%cols)*fw,(frame/cols)*fh,fw,fh);}
+    pub fn tilemap(map:&str,tileset:&str,tile_w:u16,tile_h:u16,x:i16,y:i16){let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK)else{return;};let Some(map)=pack.get_named(map)else{return;};let Some(sprite)=pack.get_named(tileset)else{return;};if map.kind!=2||sprite.kind!=1||map.data.len()<4||sprite.data.len()<4||tile_w==0||tile_h==0{return;}let mw=u16::from_le_bytes([map.data[0],map.data[1]])as usize;let mh=u16::from_le_bytes([map.data[2],map.data[3]])as usize;let sw=u16::from_le_bytes([sprite.data[0],sprite.data[1]]);let cols=sw/tile_w;if cols==0{return;}for row in 0..mh{for col in 0..mw{let at=4+(row*mw+col)*2;if at+2>map.data.len(){return;}let tile=u16::from_le_bytes([map.data[at],map.data[at+1]]);let(dx,dy)=world_to_screen(x+col as i16*tile_w as i16,y+row as i16*tile_h as i16);Self::sprite_data(sprite.data,dx,dy,(tile%cols)*tile_w,(tile/cols)*tile_h,tile_w,tile_h);}}}
+    fn sprite_data(data:&'static[u8],x:i16,y:i16,sx:u16,sy:u16,requested_w:u16,requested_h:u16){if data.len()<4{return;}let width=u16::from_le_bytes([data[0],data[1]]);let height=u16::from_le_bytes([data[2],data[3]]);let sw=requested_w.min(width.saturating_sub(sx));let sh=requested_h.min(height.saturating_sub(sy));if sw==0||sh==0{return;}let bounds=ClipRect::clipped(x,y,sw as i16,sh as i16);let source=ClipRect{x:sx as i16,y:sy as i16,w:sw as i16,h:sh as i16};unsafe{RENDERER.push(DrawCommand{kind:DrawKind::Sprite,bounds,color:0,bg:0,text:[0;64],text_len:0,asset:data,source,origin_x:x,origin_y:y});}}
     pub fn pixel_at(x:i16,y:i16)->u32{if x<0||y<0||x>=SCREEN_W||y>=SCREEN_H{return 0;}let _=eadk::wait_for_vblank();unsafe{RENDERER.present();}let mut pixel=0u16;eadk::pull_rect(eadk::Rect{x:x as u16,y:y as u16,width:1,height:1},&mut pixel as *mut u16);pixel as u32}
     pub fn text(text:&str,x:i16,y:i16,c:Color,bg:Color){
         if y<0||y+SMALL_FONT_H>SCREEN_H||x>=SCREEN_W{return;}
@@ -611,7 +631,7 @@ impl Draw {
         let width=(count as i16).saturating_mul(SMALL_FONT_W);
         let b=ClipRect::clipped(draw_x,y,width,SMALL_FONT_H);if b.empty()||!b.valid_screen(){return;}
         let mut buf=[0u8;64];buf[..count].copy_from_slice(&bytes[skip..skip+count]);buf[count]=0;
-        unsafe{RENDERER.push(DrawCommand{kind:DrawKind::Text,bounds:b,color:c.0,bg:bg.0,text:buf,text_len:count as u8});}
+        unsafe{RENDERER.push(DrawCommand{kind:DrawKind::Text,bounds:b,color:c.0,bg:bg.0,text:buf,text_len:count as u8,asset:&[],source:ClipRect::EMPTY,origin_x:0,origin_y:0});}
     }
     pub fn number<T:Into<u64>+Copy>(value:T,x:i16,y:i16,c:Color,bg:Color){let mut value:u64=value.into();let mut tmp=[0u8;20];let mut n=0usize;if value==0{tmp[0]=b'0';n=1;}else{while value>0&&n<19{tmp[n]=b'0'+(value%10) as u8;value/=10;n+=1;}tmp[..n].reverse();}let s=unsafe{core::str::from_utf8_unchecked(&tmp[..n])};Self::text(s,x,y,c,bg);}
     #[inline] pub fn present(){unsafe{RENDERER.present();}}
@@ -767,6 +787,14 @@ mod abi_regression_tests {
         assert!(PLATFORM.contains("self.full_present();self.immediate=true"));
         assert!(PLATFORM.contains("SMALL_FONT_W"));
         assert!(MAIN.contains("platform::frame_begin();"));
+    }
+
+    #[test]
+    fn sprites_render_as_bounded_horizontal_runs() {
+        assert!(PLATFORM.contains("DrawKind::Sprite=>Self::render_sprite"));
+        assert!(PLATFORM.contains("height:1},color"));
+        assert!(PLATFORM.contains("Self::sprite_data(asset.data"));
+        assert!(!PLATFORM.contains("for pixel in"));
     }
 
     #[test]

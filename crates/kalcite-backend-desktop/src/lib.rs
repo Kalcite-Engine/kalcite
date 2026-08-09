@@ -95,9 +95,10 @@ fn write_project_data(
     fs::write(
         root.join("src/project_data.rs"),
         format!(
-            "#[used]\npub static ENTRY_SCENE: [u8; {}] = *include_bytes!(\"entry.ksc2\");\n#[used]\npub static ASSET_PACK: [u8; {}] = *include_bytes!(\"assets.kap\");\n",
+            "#[used]\npub static ENTRY_SCENE: [u8; {}] = *include_bytes!(\"entry.ksc2\");\n#[used]\npub static ASSET_PACK: [u8; {}] = *include_bytes!(\"assets.kap\");\n{}",
             scene.len(),
-            assets.len()
+            assets.len(),
+            ASSET_RUNTIME.trim_start_matches("#![no_std]")
         ),
     )
 }
@@ -129,6 +130,7 @@ strip = "symbols"
 }
 
 const RUNTIME: &str = include_str!("../../kalcite-runtime-core/src/pool.rs");
+const ASSET_RUNTIME: &str = include_str!("../../kalcite-engine-assets/src/lib.rs");
 
 const PLATFORM: &str = r#"#![allow(dead_code)]
 use core::ops::{Add, AddAssign, Sub, SubAssign};
@@ -136,7 +138,7 @@ use std::{
     fs::{self, File},
     path::PathBuf,
     io::{self, Write},
-    sync::{atomic::{AtomicU32, AtomicU64, Ordering}, Mutex, OnceLock},
+    sync::{atomic::{AtomicI32, AtomicU32, AtomicU64, Ordering}, Mutex, OnceLock},
     thread,
     time::{Duration, Instant},
 };
@@ -149,6 +151,8 @@ static FRAMEBUFFER: OnceLock<Mutex<Box<[u16; PIXELS]>>> = OnceLock::new();
 static KEYS: AtomicU64 = AtomicU64::new(0);
 static START: OnceLock<Instant> = OnceLock::new();
 static RANDOM_STATE: AtomicU32 = AtomicU32::new(0x4b1d_1234);
+static CAMERA_X: AtomicI32 = AtomicI32::new(0);
+static CAMERA_Y: AtomicI32 = AtomicI32::new(0);
 
 fn framebuffer() -> &'static Mutex<Box<[u16; PIXELS]>> {
     FRAMEBUFFER.get_or_init(|| Mutex::new(Box::new([0; PIXELS])))
@@ -279,6 +283,7 @@ impl Storage {
 
 pub struct Draw;
 impl Draw {
+    pub fn camera(x:i16,y:i16){CAMERA_X.store(x as i32,Ordering::Relaxed);CAMERA_Y.store(y as i32,Ordering::Relaxed);}
     pub fn clear(c: Color) { framebuffer().lock().unwrap().fill(c.0); }
     pub fn rect(x:i16,y:i16,w:i16,h:i16,c:Color) {
         if w<=0 || h<=0 { return; }
@@ -287,6 +292,31 @@ impl Draw {
         if x1<=x0 || y1<=y0 { return; }
         let mut fb=framebuffer().lock().unwrap();
         for yy in y0..y1 { let row=yy*WIDTH; for xx in x0..x1 { fb[row+xx]=c.0; } }
+    }
+    pub fn sprite(name:&str,x:i16,y:i16) {
+        let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK) else{return;};
+        let Some(asset)=pack.get_named(name) else{return;};
+        let(x,y)=world_to_screen(x,y);draw_sprite_data(asset.data,x,y,0,0,u16::MAX,u16::MAX);
+    }
+    pub fn sprite_region(name:&str,x:i16,y:i16,sx:u16,sy:u16,w:u16,h:u16) {
+        let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK) else{return;};
+        let Some(asset)=pack.get_named(name) else{return;};
+        let(x,y)=world_to_screen(x,y);draw_sprite_data(asset.data,x,y,sx,sy,w,h);
+    }
+    pub fn sprite_frame(sheet:&str,frame:u16,x:i16,y:i16) {
+        let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK) else{return;};
+        let Some(meta)=pack.get_named(sheet) else{return;};
+        if meta.kind!=3||meta.data.len()!=12{return;}
+        let image=u64::from_le_bytes(meta.data[..8].try_into().unwrap());
+        let fw=u16::from_le_bytes(meta.data[8..10].try_into().unwrap());let fh=u16::from_le_bytes(meta.data[10..12].try_into().unwrap());
+        let Some(sprite)=pack.get(image) else{return;};if sprite.data.len()<4||fw==0||fh==0{return;}
+        let width=u16::from_le_bytes([sprite.data[0],sprite.data[1]]);let cols=width/fw;if cols==0{return;}
+        let(x,y)=world_to_screen(x,y);draw_sprite_data(sprite.data,x,y,(frame%cols)*fw,(frame/cols)*fh,fw,fh);
+    }
+    pub fn tilemap(map:&str,tileset:&str,tile_w:u16,tile_h:u16,x:i16,y:i16) {
+        let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK)else{return;};let Some(map)=pack.get_named(map)else{return;};let Some(sprite)=pack.get_named(tileset)else{return;};
+        if map.kind!=2||sprite.kind!=1||map.data.len()<4||sprite.data.len()<4||tile_w==0||tile_h==0{return;}let mw=u16::from_le_bytes([map.data[0],map.data[1]]) as usize;let mh=u16::from_le_bytes([map.data[2],map.data[3]]) as usize;let sw=u16::from_le_bytes([sprite.data[0],sprite.data[1]]);let cols=sw/tile_w;if cols==0{return;}
+        for row in 0..mh{for col in 0..mw{let at=4+(row*mw+col)*2;if at+2>map.data.len(){return;}let tile=u16::from_le_bytes([map.data[at],map.data[at+1]]);let(dx,dy)=world_to_screen(x+col as i16*tile_w as i16,y+row as i16*tile_h as i16);draw_sprite_data(sprite.data,dx,dy,(tile%cols)*tile_w,(tile/cols)*tile_h,tile_w,tile_h);}}
     }
     pub fn pixel_at(x:i16,y:i16)->u32 {
         if x<0 || y<0 || x>=WIDTH as i16 || y>=HEIGHT as i16 { return 0; }
@@ -306,6 +336,21 @@ impl Draw {
         while value>0 && n<buf.len() { buf[n]=b'0'+(value%10) as u8; value/=10; n+=1; }
         let mut px=x;
         while n>0 { n-=1; draw_char(buf[n],px,y,c,bg); px+=6; }
+    }
+}
+
+fn world_to_screen(x:i16,y:i16)->(i16,i16){(x.saturating_sub(CAMERA_X.load(Ordering::Relaxed) as i16),y.saturating_sub(CAMERA_Y.load(Ordering::Relaxed) as i16))}
+
+fn draw_sprite_data(data:&[u8],x:i16,y:i16,sx:u16,sy:u16,requested_w:u16,requested_h:u16) {
+    if data.len()<4{return;}let width=u16::from_le_bytes([data[0],data[1]]);let height=u16::from_le_bytes([data[2],data[3]]);
+    let sw=requested_w.min(width.saturating_sub(sx));let sh=requested_h.min(height.saturating_sub(sy));if sw==0||sh==0{return;}
+    let mut pixel=0usize;let mut at=4usize;let mut fb=framebuffer().lock().unwrap();
+    while at+4<=data.len(){let count=data[at] as usize;let transparent=data[at+1]!=0;let color=u16::from_le_bytes([data[at+2],data[at+3]]);at+=4;if count==0{return;}
+        let row=pixel/width as usize;let col=pixel%width as usize;pixel+=count;
+        if transparent||row<sy as usize||row>=sy as usize+sh as usize{continue;}
+        let run_start=col.max(sx as usize);let run_end=(col+count).min(sx as usize+sw as usize);if run_end<=run_start{continue;}
+        let dy=y+row as i16-sy as i16;if dy<0||dy>=HEIGHT as i16{continue;}let dx=x+run_start as i16-sx as i16;let end=x+run_end as i16-sx as i16;
+        let x0=dx.max(0) as usize;let x1=end.min(WIDTH as i16).max(0) as usize;if x1>x0{fb[dy as usize*WIDTH+x0..dy as usize*WIDTH+x1].fill(color);}
     }
 }
 

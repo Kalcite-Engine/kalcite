@@ -11,6 +11,10 @@ class Main extends Game {
 
     fn draw() -> void {
         Draw.clear(Color.Black);
+        Draw.camera(1, 0);
+        Draw.tilemap("level.csv", "mascot-sheet.png", 32, 32, 0, 0);
+        Draw.sprite_region("mascot-sheet.png", 12, 72, 32, 0, 32, 32);
+        Draw.sprite_frame("mascot.ksheet", 0, 52, 72);
         if score > 0 {
             Draw.rect(0, 0, 4, 4, Color.White);
         }

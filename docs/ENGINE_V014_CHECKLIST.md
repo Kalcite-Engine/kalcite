@@ -44,8 +44,8 @@ works.
 - [x] Input map, save schema, tilemap CSV, asset pack, object files, compiled
       scene, profiler output, desktop/headless run, and NumWorks build paths
 - [ ] Exercise logical input actions in game code instead of physical keys
-- [ ] Add a PNG spritesheet with transparency and regions
-- [ ] Render sprites, tilemap, camera movement, and multiple layers
+- [x] Add a PNG spritesheet with transparency and regions
+- [x] Render sprites, tilemap, camera movement, and multiple layers
 - [ ] Exercise physics world integration and collision callbacks
 - [ ] Exercise save/load and schema-version failure behavior from game code
 - [x] Exercise autoload lifecycle and direct generated signal delivery
@@ -53,11 +53,12 @@ works.
 
 ## Runtime subsystem status
 
-- Assets: deterministic IDs, PNG decoding, RGB565 conversion, RLE, CSV tile
-  import, pack emission, and target embedding exist. Runtime pack lookup,
-  deduplicated payloads, and spritesheet metadata remain.
-- Renderer: ordering, camera offset, sprite/tilemap command types, and tests exist.
-  Asset-backed drawing and the optimized NumWorks RLE run path remain.
+- Assets: deterministic IDs, PNG decoding, explicit alpha, row-bounded RGB565
+  RLE, CSV tile import, deduplicated KAP1 payloads, spritesheet metadata, target
+  embedding, and bounded runtime lookup are complete.
+- Renderer: stable layers, camera offset, sprites, regions, spritesheet frames,
+  tilemaps, clipping, desktop framebuffer drawing, and the optimized NumWorks
+  horizontal-run path are complete.
 - Physics: deterministic AABB blocking exists as an isolated crate. It is not yet
   wired into generated project lifecycle code.
 - Input: action maps and pressed/held/released state exist. Generated games do not
@@ -74,9 +75,7 @@ works.
 
 ## Next implementation order
 
-1. Add asset-backed renderer operations with bounded horizontal RLE runs on
-   NumWorks.
-2. Wire logical input, fixed-step physics, typed saves, and profiler counters into
+1. Wire logical input, fixed-step physics, typed saves, and profiler counters into
    one shared lifecycle.
-3. Expand `examples/game_project` for each runtime behavior as it lands.
-4. Repeat desktop/headless and native NumWorks validation.
+2. Expand `examples/game_project` for each runtime behavior as it lands.
+3. Repeat desktop/headless and native NumWorks validation.
