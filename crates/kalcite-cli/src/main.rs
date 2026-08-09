@@ -566,6 +566,10 @@ fn package_add_command(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     }
     let name = &args[0];
+    if !kalcite_package::valid_name(name) {
+        eprintln!("invalid package name `{name}`; use ASCII letters, digits, '-' or '_'");
+        return ExitCode::FAILURE;
+    }
     let source = &args[1];
     let revision = args
         .get(2)
@@ -585,9 +589,13 @@ fn package_add_command(args: &[String]) -> ExitCode {
         }
     };
     let checksum = if let Some(local) = source.strip_prefix("path:") {
-        fs::read(root.join(local))
-            .map(|b| kalcite_package::checksum(&b))
-            .unwrap_or_default()
+        match kalcite_package::checksum_path(&root.join(local)) {
+            Ok(checksum) => checksum,
+            Err(error) => {
+                eprintln!("package `{name}`: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
     } else {
         String::new()
     };
@@ -657,16 +665,29 @@ fn package_sync_command(args: &[String]) -> ExitCode {
     };
     let cache = root.join(".kalcite/packages");
     let _ = fs::create_dir_all(&cache);
+    if let Err(error) = kalcite_package::verify(&lock, &cache) {
+        // A missing cache is expected before sync; structural lock errors are not.
+        if !error.contains("checksum mismatch") {
+            eprintln!("lockfile: {error}");
+            return ExitCode::FAILURE;
+        }
+    }
     for (name, p) in &lock.packages {
         if let Some(local) = p.source.strip_prefix("path:") {
             let src = root.join(local);
             let dst = cache.join(name);
-            if let Err(e) = fs::copy(&src, &dst) {
+            if let Err(e) = kalcite_package::materialize(&src, &dst) {
                 eprintln!("package `{name}`: {e}");
                 return ExitCode::FAILURE;
             }
             if !p.checksum.is_empty() {
-                let got = kalcite_package::checksum(&fs::read(&dst).unwrap_or_default());
+                let got = match kalcite_package::checksum_path(&dst) {
+                    Ok(checksum) => checksum,
+                    Err(error) => {
+                        eprintln!("package `{name}`: {error}");
+                        return ExitCode::FAILURE;
+                    }
+                };
                 if got != p.checksum {
                     eprintln!("package `{name}`: checksum mismatch");
                     return ExitCode::FAILURE;

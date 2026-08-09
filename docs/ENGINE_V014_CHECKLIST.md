@@ -67,8 +67,9 @@ works.
   shared platform storage API, including schema and future-version rejection.
 - Profiler: CSV output includes update, render, physics, draw, dirty-pixel/region,
   sprite, tile, collision-query, pool, and static-RAM counters.
-- Packages: deterministic lock/add/remove/sync foundations exist. Dependency
-  source materialization and compiler/project integration need further coverage.
+- Packages: deterministic lock/add/remove/sync, safe local file/tree
+  materialization, normalized checksums, and compiler/project source discovery
+  are complete.
 - LSP: compiler diagnostics work over stdio. Scene, asset, signal, input-action,
   export, and engine-symbol navigation/completion remain.
 - Audio: a lightweight tone/stop abstraction and command accounting are linked
@@ -77,6 +78,5 @@ works.
 
 ## Next implementation order
 
-1. Complete dependency source materialization and compiler/project integration.
-2. Add engine-aware LSP diagnostics, completion, and navigation.
-3. Repeat the full completion audit and native validation.
+1. Add engine-aware LSP diagnostics, completion, and navigation.
+2. Repeat the full completion audit and native validation.

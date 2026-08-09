@@ -10,7 +10,7 @@ class Main extends Game {
     }
 
     fn on_player_collided() -> void {
-        score += 10;
+        score = package_bonus(score + 9);
     }
 
     fn draw() -> void {

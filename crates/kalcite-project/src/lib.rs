@@ -143,6 +143,19 @@ pub fn load_manifest(root: &Path) -> Result<ProjectManifest, ProjectError> {
 pub fn discover(root: &Path, manifest: &ProjectManifest) -> Result<ProjectIndex, ProjectError> {
     let mut paths = Vec::new();
     collect_klc(&root.join(&manifest.scripts_dir), &mut paths)?;
+    let package_cache = root.join(".kalcite/packages");
+    if package_cache.is_dir() {
+        let mut packages = fs::read_dir(&package_cache)?.collect::<Result<Vec<_>, _>>()?;
+        packages.sort_by_key(|entry| entry.file_name());
+        for package in packages {
+            let path = package.path();
+            if path.is_file() {
+                paths.push(path);
+            } else {
+                collect_klc(&path, &mut paths)?;
+            }
+        }
+    }
     paths.sort();
     let mut index = ProjectIndex::default();
     for path in paths {
@@ -784,6 +797,28 @@ mod tests {
     #[test]
     fn snake_names() {
         assert_eq!(snake_case("PlayerController"), "player_controller");
+    }
+
+    #[test]
+    fn discovers_materialized_package_scripts() {
+        let root =
+            std::env::temp_dir().join(format!("kalcite-project-package-{}", std::process::id()));
+        fs::create_dir_all(root.join("scripts")).unwrap();
+        fs::create_dir_all(root.join(".kalcite/packages/demo/scripts")).unwrap();
+        fs::write(
+            root.join("scripts/main.klc"),
+            "@scene class Main extends Game {}",
+        )
+        .unwrap();
+        fs::write(
+            root.join(".kalcite/packages/demo/scripts/bonus.klc"),
+            "class PackageBonus extends Node {}",
+        )
+        .unwrap();
+        let index = discover(&root, &ProjectManifest::default()).unwrap();
+        assert_eq!(index.scripts.len(), 2);
+        assert!(index.symbols.contains_key("PackageBonus"));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
