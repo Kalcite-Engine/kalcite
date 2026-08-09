@@ -1,0 +1,8 @@
+@autoload
+class GameState extends Node {
+    var launches: u16 = 0;
+
+    fn ready() -> void {
+        launches += 1;
+    }
+}

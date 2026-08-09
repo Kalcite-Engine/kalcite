@@ -8,4 +8,11 @@ class Main extends Game {
     fn on_player_moved(value: i16) -> void {
         score += 1;
     }
+
+    fn draw() -> void {
+        Draw.clear(Color.Black);
+        if score > 0 {
+            Draw.rect(0, 0, 4, 4, Color.White);
+        }
+    }
 }

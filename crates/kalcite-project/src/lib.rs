@@ -172,6 +172,24 @@ pub fn discover(root: &Path, manifest: &ProjectManifest) -> Result<ProjectIndex,
     Ok(index)
 }
 
+pub fn discover_scenes(
+    root: &Path,
+    manifest: &ProjectManifest,
+) -> Result<Vec<(PathBuf, kalcite_scene::Scene)>, String> {
+    let mut paths = Vec::new();
+    collect_extension(&root.join(&manifest.scenes_dir), "kscn", &mut paths)
+        .map_err(|error| error.to_string())?;
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            kalcite_scene::load(&path)
+                .map(|scene| (path.clone(), scene))
+                .map_err(|error| format!("{}: {error}", path.display()))
+        })
+        .collect()
+}
+
 pub fn validate(index: &ProjectIndex) -> Vec<ProjectDiagnostic> {
     let mut out = Vec::new();
     let builtins: BTreeSet<&str> = [
@@ -257,6 +275,72 @@ pub fn validate_scene(
                 ),
             ));
         }
+        let Some(class) = node
+            .script
+            .as_deref()
+            .and_then(|script| class_by_name(index, script))
+        else {
+            continue;
+        };
+        for (name, value) in &node.properties {
+            if matches!(name.as_str(), "position" | "rotation" | "visible" | "layer") {
+                continue;
+            }
+            let field = class.members.iter().find_map(|member| match member {
+                Member::Field(field) if field.name == *name && has_attr(&field.attrs, "export") => {
+                    Some(field)
+                }
+                _ => None,
+            });
+            match field {
+                None => diagnostics.push(diag(
+                    Severity::Error,
+                    "KLP2005",
+                    scene_path,
+                    format!(
+                        "property `{name}` on node `{}` is not an exported field of `{}`",
+                        node.path, class.name
+                    ),
+                )),
+                Some(field) if !scene_value_matches(&field.ty, value) => diagnostics.push(diag(
+                    Severity::Error,
+                    "KLP2006",
+                    scene_path,
+                    format!(
+                        "property `{name}` on node `{}` is not a valid `{}` value",
+                        node.path, field.ty
+                    ),
+                )),
+                Some(_) => {}
+            }
+        }
+    }
+
+    for declaration in &scene.autoloads {
+        let parts = declaration.split_whitespace().collect::<Vec<_>>();
+        let Some(class_name) = parts.get(1) else {
+            diagnostics.push(diag(
+                Severity::Error,
+                "KLP2007",
+                scene_path,
+                format!(
+                    "invalid autoload declaration `{declaration}`; expected `@autoload Alias Class`"
+                ),
+            ));
+            continue;
+        };
+        let valid = class_by_name(index, class_name)
+            .is_some_and(|class| has_attr(&class.attrs, "autoload"));
+        if parts.len() != 2 || !valid {
+            diagnostics.push(diag(
+                Severity::Error,
+                "KLP2007",
+                scene_path,
+                format!(
+                    "autoload `{declaration}` must reference a class declared with `@autoload`"
+                ),
+            ));
+        }
     }
 
     for connection in &scene.connections {
@@ -325,10 +409,43 @@ pub fn validate_scene(
     diagnostics
 }
 
+fn scene_value_matches(ty: &str, value: &str) -> bool {
+    let value = value.trim();
+    match ty.trim() {
+        "bool" => matches!(value, "true" | "false"),
+        "u8" => value.parse::<u8>().is_ok(),
+        "u16" => value.parse::<u16>().is_ok(),
+        "u32" => value.parse::<u32>().is_ok(),
+        "i8" => value.parse::<i8>().is_ok(),
+        "i16" => value.parse::<i16>().is_ok(),
+        "i32" => value.parse::<i32>().is_ok(),
+        "fx8" => value.trim_end_matches("fx").parse::<f32>().is_ok(),
+        "string" | "String" => value.starts_with('"') && value.ends_with('"'),
+        "Vec2i" | "Vec2fx" => {
+            value.starts_with('[') && value.ends_with(']') && value.split(',').count() == 2
+        }
+        _ => true,
+    }
+}
+
 pub fn emit_scene_runtime(
     index: &ProjectIndex,
     scene: &kalcite_scene::Scene,
 ) -> Result<String, String> {
+    let autoloads = scene
+        .autoloads
+        .iter()
+        .map(|declaration| {
+            let mut parts = declaration.split_whitespace();
+            let alias = parts
+                .next()
+                .ok_or_else(|| "invalid validated autoload".to_string())?;
+            let class = parts
+                .next()
+                .ok_or_else(|| "invalid validated autoload".to_string())?;
+            Ok((scene_ident(alias), class))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let scripted = scene
         .node_defs
         .iter()
@@ -339,6 +456,9 @@ pub fn emit_scene_runtime(
     }
 
     let mut out = String::from("use crate::game;\n\npub struct SceneRuntime {\n");
+    for (alias, class) in &autoloads {
+        out.push_str(&format!("    pub {alias}: game::{class},\n"));
+    }
     for (node, script) in &scripted {
         out.push_str(&format!(
             "    pub {}: game::{script},\n",
@@ -346,6 +466,11 @@ pub fn emit_scene_runtime(
         ));
     }
     out.push_str("}\n\nimpl Default for SceneRuntime {\n    fn default() -> Self {\n");
+    for (alias, class) in &autoloads {
+        out.push_str(&format!(
+            "        let {alias} = game::{class}::default();\n"
+        ));
+    }
     for (node, script) in &scripted {
         let ident = scene_ident(&node.path);
         out.push_str(&format!(
@@ -360,6 +485,9 @@ pub fn emit_scene_runtime(
         }
     }
     out.push_str("        let mut scene = Self {\n");
+    for (alias, _) in &autoloads {
+        out.push_str(&format!("            {alias},\n"));
+    }
     for (node, _) in &scripted {
         let ident = scene_ident(&node.path);
         out.push_str(&format!("            {ident},\n"));
@@ -369,6 +497,15 @@ pub fn emit_scene_runtime(
     );
     for hook in ["ready", "update", "draw"] {
         out.push_str(&format!("    pub fn {hook}(&mut self) {{\n"));
+        for (alias, class) in &autoloads {
+            if class_by_name(index, class).is_some_and(|class| {
+                class.members.iter().any(
+                    |member| matches!(member, Member::Function(function) if function.name == hook),
+                )
+            }) {
+                out.push_str(&format!("        self.{alias}.{hook}();\n"));
+            }
+        }
         for (node, script) in &scripted {
             if class_by_name(index, script).is_some_and(|class| {
                 class.members.iter().any(
@@ -379,6 +516,47 @@ pub fn emit_scene_runtime(
                     "        self.{}.{hook}();\n",
                     scene_ident(&node.path)
                 ));
+            }
+            if hook == "update" {
+                for connection in scene
+                    .connections
+                    .iter()
+                    .filter(|connection| connection.from == node.path)
+                {
+                    let signal = class_by_name(index, script)
+                        .and_then(|class| {
+                            class.members.iter().find_map(|member| match member {
+                                Member::Signal(signal) if signal.name == connection.signal => {
+                                    Some(signal)
+                                }
+                                _ => None,
+                            })
+                        })
+                        .ok_or_else(|| {
+                            format!(
+                                "missing validated signal `{}.{}`",
+                                connection.from, connection.signal
+                            )
+                        })?;
+                    let names = signal
+                        .params
+                        .iter()
+                        .map(|param| param.name.as_str())
+                        .collect::<Vec<_>>();
+                    let pattern = if names.is_empty() {
+                        "()".to_string()
+                    } else {
+                        format!("({},)", names.join(", "))
+                    };
+                    out.push_str(&format!(
+                        "        while let Some({pattern}) = self.{}.__take_signal_{}() {{\n            self.{}.{}({});\n        }}\n",
+                        scene_ident(&connection.from),
+                        connection.signal,
+                        scene_ident(&connection.to),
+                        connection.method,
+                        names.join(", "),
+                    ));
+                }
             }
         }
         out.push_str("    }\n");
@@ -484,14 +662,18 @@ pub fn init_project(root: &Path, name: &str) -> Result<(), ProjectError> {
 }
 
 fn collect_klc(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
+    collect_extension(dir, "klc", out)
+}
+
+fn collect_extension(dir: &Path, extension: &str, out: &mut Vec<PathBuf>) -> io::Result<()> {
     if !dir.exists() {
         return Ok(());
     }
     for entry in fs::read_dir(dir)? {
         let path = entry?.path();
         if path.is_dir() {
-            collect_klc(&path, out)?;
-        } else if path.extension().and_then(|x| x.to_str()) == Some("klc") {
+            collect_extension(&path, extension, out)?;
+        } else if path.extension().and_then(|x| x.to_str()) == Some(extension) {
             out.push(path);
         }
     }
@@ -660,7 +842,8 @@ mod tests {
     fn validates_static_scene_signal_signatures() {
         let source = r#"
             class Main extends Game { fn receive(value: u16) -> void {} }
-            class Player extends Node2D { signal moved(value: u16); }
+            class Player extends Node2D { @export var speed: u16 = 1; signal moved(value: u16); }
+            @autoload class Saves extends Node { fn update() -> void {} }
         "#;
         let module = parse(source).unwrap();
         let path = PathBuf::from("scripts/game.klc");
@@ -678,7 +861,7 @@ mod tests {
             module,
         });
         let scene = kalcite_scene::parse(
-            "[node \"Main\"]\nscript=\"Main\"\n[node \"Player\" parent=\"Main\"]\nscript=\"Player\"\n@signal Main/Player.moved -> Main.receive\n",
+            "[node \"Main\"]\nscript=\"Main\"\n[node \"Player\" parent=\"Main\"]\nscript=\"Player\"\nspeed=2\n@signal Main/Player.moved -> Main.receive\n@autoload Saves Saves\n",
         )
         .unwrap();
 
@@ -686,6 +869,9 @@ mod tests {
         let runtime = emit_scene_runtime(&index, &scene).unwrap();
         assert!(runtime.contains("pub main: game::Main"));
         assert!(runtime.contains("pub main_player: game::Player"));
+        assert!(runtime.contains("pub saves: game::Saves"));
+        assert!(runtime.contains("main_player.speed = 2;"));
+        assert!(runtime.contains("self.saves.update();"));
         assert!(runtime.contains("self.main.receive(value);"));
         assert!(runtime.contains("pub fn emit_main_player_moved(&mut self, value: u16)"));
 
@@ -697,6 +883,14 @@ mod tests {
             validate_scene(&index, &bad_scene, Path::new("main.kscn"))
                 .iter()
                 .any(|diagnostic| diagnostic.code == "KLP2002")
+        );
+
+        let bad_export =
+            kalcite_scene::parse("[node \"Main\"]\nscript=\"Main\"\nunknown=2\n").unwrap();
+        assert!(
+            validate_scene(&index, &bad_export, Path::new("main.kscn"))
+                .iter()
+                .any(|diagnostic| diagnostic.code == "KLP2005")
         );
     }
 }

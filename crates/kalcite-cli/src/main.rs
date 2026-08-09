@@ -1,6 +1,8 @@
 use kalcite_linter::{Severity, has_errors, lint};
 use kalcite_object::Target;
-use kalcite_project::{discover, find_root, init_project, load_manifest, validate, validate_scene};
+use kalcite_project::{
+    discover, discover_scenes, find_root, init_project, load_manifest, validate, validate_scene,
+};
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -1061,7 +1063,17 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let scene_diagnostics = validate_scene(&index, &scene, &scene_path);
+    let scenes = match discover_scenes(&root, &manifest) {
+        Ok(scenes) => scenes,
+        Err(error) => {
+            eprintln!("scene discovery: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let scene_diagnostics = scenes
+        .iter()
+        .flat_map(|(path, scene)| validate_scene(&index, scene, path))
+        .collect::<Vec<_>>();
     for diagnostic in &scene_diagnostics {
         let level = match diagnostic.severity {
             Severity::Warning => "warning",
@@ -1167,6 +1179,32 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
     if let Err(error) = fs::write(&scene_output, compiled_scene) {
         eprintln!("{}: {error}", scene_output.display());
         return ExitCode::FAILURE;
+    }
+    for (source_path, compiled) in &scenes {
+        let relative_scene = source_path
+            .strip_prefix(root.join(&manifest.scenes_dir))
+            .unwrap_or(source_path);
+        let output = root
+            .join(".kalcite/scenes")
+            .join(relative_scene)
+            .with_extension("ksc2");
+        if let Some(parent) = output.parent()
+            && let Err(error) = fs::create_dir_all(parent)
+        {
+            eprintln!("{}: {error}", parent.display());
+            return ExitCode::FAILURE;
+        }
+        let bytes = match kalcite_scene::try_encode_compiled(compiled) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                eprintln!("{}: {error}", source_path.display());
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Err(error) = fs::write(&output, bytes) {
+            eprintln!("{}: {error}", output.display());
+            return ExitCode::FAILURE;
+        }
     }
 
     let target = parse_target_option(args).unwrap_or_else(|| target_from_name(&manifest.target));

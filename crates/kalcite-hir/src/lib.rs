@@ -15,7 +15,14 @@ pub struct Class {
     pub attrs: Vec<Attribute>,
     pub base: Option<String>,
     pub fields: Vec<Field>,
+    pub signals: Vec<Signal>,
     pub functions: Vec<Function>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Signal {
+    pub name: String,
+    pub params: Vec<Field>,
 }
 
 impl Class {
@@ -183,6 +190,7 @@ fn lower_class(c: &AstClass, parent: &[String], p: &mut Program) -> Result<(), D
     let mut path = parent.to_vec();
     path.push(c.name.clone());
     let mut fields = Vec::new();
+    let mut signals = Vec::new();
     let mut functions = Vec::new();
     for m in &c.members {
         match m {
@@ -195,7 +203,20 @@ fn lower_class(c: &AstClass, parent: &[String], p: &mut Program) -> Result<(), D
             }),
             Member::Function(f) => functions.push(lower_function(Some(path.clone()), f)?),
             Member::Class(nested) => lower_class(nested, &path, p)?,
-            Member::Signal(_) => {}
+            Member::Signal(signal) => signals.push(Signal {
+                name: signal.name.clone(),
+                params: signal
+                    .params
+                    .iter()
+                    .map(|param| Field {
+                        name: param.name.clone(),
+                        ty: parse_type(&param.ty),
+                        mutable: false,
+                        init: None,
+                        attrs: Vec::new(),
+                    })
+                    .collect(),
+            }),
         }
     }
     p.classes.push(Class {
@@ -204,6 +225,7 @@ fn lower_class(c: &AstClass, parent: &[String], p: &mut Program) -> Result<(), D
         attrs: c.attrs.clone(),
         base: c.base.clone(),
         fields,
+        signals,
         functions,
     });
     Ok(())

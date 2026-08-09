@@ -28,14 +28,14 @@ works.
 - [x] Validate scene script classes, signal declarations, receiver methods, and
       signal parameter types against project scripts
 - [x] Emit the entry scene as `.kalcite/scenes/<name>.ksc2`
-- [ ] Compile every scene in `scenes_dir`, not only the entry scene
-- [ ] Validate exported property names and values against script field types
-- [ ] Resolve and validate autoload class declarations
+- [x] Compile every scene in `scenes_dir`, not only the entry scene
+- [x] Validate exported property names and values against script field types
+- [x] Resolve and validate autoload class declarations
 - [x] Generate static node ownership, exported-property initialization, ordered
       lifecycle calls, and typed direct signal dispatch entry points
 - [x] Embed compiled scene and asset-pack bytes in desktop and NumWorks binaries
-- [ ] Construct autoloads and route language-level `signal.emit(...)` calls into
-      the generated direct dispatch entry points
+- [x] Construct autoloads and route language-level `signal.emit(...)` through
+      bounded FIFO queues into generated direct dispatch calls
 
 ## Integration fixture
 
@@ -48,7 +48,7 @@ works.
 - [ ] Render sprites, tilemap, camera movement, and multiple layers
 - [ ] Exercise physics world integration and collision callbacks
 - [ ] Exercise save/load and schema-version failure behavior from game code
-- [ ] Exercise autoload lifecycle and direct generated signal delivery
+- [x] Exercise autoload lifecycle and direct generated signal delivery
 - [ ] Exercise audio through the platform abstraction
 
 ## Runtime subsystem status
@@ -74,11 +74,9 @@ works.
 
 ## Next implementation order
 
-1. Generate and test static entry-scene construction and direct signal wiring.
-2. Embed the compiled scene and asset pack in both generated targets.
-3. Add asset-backed renderer operations with bounded horizontal RLE runs on
+1. Add asset-backed renderer operations with bounded horizontal RLE runs on
    NumWorks.
-4. Wire logical input, fixed-step physics, typed saves, and profiler counters into
+2. Wire logical input, fixed-step physics, typed saves, and profiler counters into
    one shared lifecycle.
-5. Expand `examples/game_project` for each runtime behavior as it lands.
-6. Repeat desktop/headless, native NumWorks, and physical-device validation.
+3. Expand `examples/game_project` for each runtime behavior as it lands.
+4. Repeat desktop/headless and native NumWorks validation.

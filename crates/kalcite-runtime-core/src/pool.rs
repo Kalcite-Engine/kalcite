@@ -1,5 +1,47 @@
 use core::{marker::PhantomData, mem::MaybeUninit};
 
+pub struct SignalQueue<T, const N: usize> {
+    slots: [Option<T>; N],
+    head: usize,
+    len: usize,
+}
+
+impl<T, const N: usize> SignalQueue<T, N> {
+    pub const fn new() -> Self {
+        Self {
+            slots: [const { None }; N],
+            head: 0,
+            len: 0,
+        }
+    }
+
+    pub fn push(&mut self, value: T) -> bool {
+        if self.len == N || N == 0 {
+            return false;
+        }
+        let tail = (self.head + self.len) % N;
+        self.slots[tail] = Some(value);
+        self.len += 1;
+        true
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        if self.len == 0 {
+            return None;
+        }
+        let value = self.slots[self.head].take();
+        self.head = (self.head + 1) % N;
+        self.len -= 1;
+        value
+    }
+}
+
+impl<T, const N: usize> Default for SignalQueue<T, N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Compact, typed, generational reference to an object in a StaticPool.
 /// 0xffff is reserved as the invalid slot index.
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -169,5 +211,18 @@ mod tests {
         let mut pool: StaticPool<u8, 1> = StaticPool::new();
         assert!(pool.spawn(1).is_valid());
         assert!(!pool.spawn(2).is_valid());
+    }
+
+    #[test]
+    fn signal_queue_is_bounded_and_fifo() {
+        let mut queue: SignalQueue<u8, 2> = SignalQueue::new();
+        assert!(queue.push(1));
+        assert!(queue.push(2));
+        assert!(!queue.push(3));
+        assert_eq!(queue.pop(), Some(1));
+        assert!(queue.push(3));
+        assert_eq!(queue.pop(), Some(2));
+        assert_eq!(queue.pop(), Some(3));
+        assert_eq!(queue.pop(), None);
     }
 }

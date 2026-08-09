@@ -1,4 +1,4 @@
 #![no_std]
 
 mod pool;
-pub use pool::{Handle, StaticPool};
+pub use pool::{Handle, SignalQueue, StaticPool};

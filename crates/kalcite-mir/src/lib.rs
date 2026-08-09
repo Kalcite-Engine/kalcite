@@ -12,6 +12,7 @@ pub struct Class {
     pub source_name: String,
     pub name: String,
     pub fields: Vec<hir::Field>,
+    pub signals: Vec<hir::Signal>,
     pub functions: Vec<hir::Function>,
     pub pool_capacity: Option<usize>,
 }
@@ -44,6 +45,7 @@ pub fn lower(hir: &hir::Program) -> Program {
             source_name: class.name.clone(),
             name: class.rust_name(),
             fields: class.fields.clone(),
+            signals: class.signals.clone(),
             functions: class.functions.clone(),
             pool_capacity: class.pool_capacity(),
         });

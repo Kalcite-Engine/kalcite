@@ -16,7 +16,7 @@ impl core::fmt::Display for EmitError {
 
 pub fn emit_game(program: &Program) -> Result<String, EmitError> {
     let mut out = String::from(
-        "use crate::platform::{Color, Draw, Hardware, Input, Key, Storage, System, Vec2fx};\nuse crate::runtime::{Handle, StaticPool};\nuse crate::stdlib::{Bits, Checksum, ColorUtil, Fixed, Math, MsgPack, Save};\n\n",
+        "use crate::platform::{Color, Draw, Hardware, Input, Key, Storage, System, Vec2fx};\nuse crate::runtime::{Handle, SignalQueue, StaticPool};\nuse crate::stdlib::{Bits, Checksum, ColorUtil, Fixed, Math, MsgPack, Save};\n\n",
     );
     for function in &program.functions {
         emit_free_function(&mut out, program, function);
@@ -277,6 +277,13 @@ fn emit_class(out: &mut String, program: &Program, class: &Class) {
             ty(program, &field.ty)
         ));
     }
+    for signal in &class.signals {
+        let payload = signal_payload(program, signal);
+        out.push_str(&format!(
+            "    pub(crate) __signal_{}: SignalQueue<{}, 4>,\n",
+            signal.name, payload
+        ));
+    }
     out.push_str("}\n");
 
     out.push_str(&format!(
@@ -291,10 +298,23 @@ fn emit_class(out: &mut String, program: &Program, class: &Class) {
             .unwrap_or_else(|| default_expr(program, &field.ty));
         out.push_str(&format!("        {}: {},\n", field.name, value));
     }
+    for signal in &class.signals {
+        out.push_str(&format!(
+            "        __signal_{}: SignalQueue::new(),\n",
+            signal.name
+        ));
+    }
     out.push_str("    } }\n}\n");
 
     out.push_str(&format!("impl {} {{\n", class.name));
     out.push_str("    #[inline] pub fn new() -> Self { Self::default() }\n");
+    for signal in &class.signals {
+        let payload = signal_payload(program, signal);
+        out.push_str(&format!(
+            "    pub(crate) fn __take_signal_{}(&mut self) -> Option<{}> {{ self.__signal_{}.pop() }}\n",
+            signal.name, payload, signal.name
+        ));
+    }
     for field in class.fields.iter().filter(|f| !f.mutable) {
         if let Some(value) = &field.init {
             out.push_str(&format!(
@@ -325,6 +345,22 @@ fn emit_class(out: &mut String, program: &Program, class: &Class) {
     out.push_str("}\n\n");
 }
 
+fn signal_payload(program: &Program, signal: &kalcite_hir::Signal) -> String {
+    if signal.params.is_empty() {
+        "()".into()
+    } else {
+        format!(
+            "({},)",
+            signal
+                .params
+                .iter()
+                .map(|param| ty(program, &param.ty))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
 fn stmt(
     out: &mut String,
     program: &Program,
@@ -335,7 +371,32 @@ fn stmt(
 ) {
     let indent = "    ".repeat(depth);
     match statement {
-        Stmt::Expr(e) => out.push_str(&format!("{indent}{};\n", expr(program, class, e, scope))),
+        Stmt::Expr(e) => {
+            if let Expr::Call { callee, args } = e
+                && let Expr::Path(parts) = callee.as_ref()
+                && parts.len() == 2
+                && parts[1] == "emit"
+                && class.signals.iter().any(|signal| signal.name == parts[0])
+            {
+                let payload = if args.is_empty() {
+                    "()".to_string()
+                } else {
+                    format!(
+                        "({},)",
+                        args.iter()
+                            .map(|argument| expr(program, class, argument, scope))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                };
+                out.push_str(&format!(
+                    "{indent}let _ = self.__signal_{}.push({payload});\n",
+                    parts[0]
+                ));
+            } else {
+                out.push_str(&format!("{indent}{};\n", expr(program, class, e, scope)));
+            }
+        }
         Stmt::Assign { target, op, value } => {
             let op = match op {
                 AssignOp::Set => "=",
@@ -652,6 +713,16 @@ mod tests {
         assert!(r.contains("Storage::write_text(\"QA\", \"HELLO\")"));
         assert!(r.contains("Storage::size(\"QA\")"));
         assert!(r.contains("Storage::remove(\"QA\")"));
+    }
+
+    #[test]
+    fn emits_bounded_signal_queues() {
+        let rust = emitted(
+            "@scene class G extends Game { signal moved(value: i16); fn update() -> void { moved.emit(3); } }",
+        );
+        assert!(rust.contains("__signal_moved: SignalQueue<(i16,), 4>"));
+        assert!(rust.contains("self.__signal_moved.push((3,))"));
+        assert!(rust.contains("__take_signal_moved"));
     }
 }
 
