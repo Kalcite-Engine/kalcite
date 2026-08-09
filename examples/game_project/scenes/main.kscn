@@ -8,6 +8,8 @@ script = "Main"
 script = "Player"
 speed = 2
 
-@signal Main/Player.moved -> Main.on_player_moved
+@signal Main/Player.core_collected -> Main.on_core_collected
 @signal Main/Player.collided -> Main.on_player_collided
+@signal Main/Player.quest_finished -> Main.on_finished
+@signal Main/Player.restarted -> Main.on_restarted
 @autoload State GameState

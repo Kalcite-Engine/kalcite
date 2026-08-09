@@ -1,6 +1,9 @@
 /target
 *.klc.rs
 *.kco
+*.nwa
+.kalcite/
+.kalcite-saves/
 .DS_Store
 node_modules/
 editors/tree-sitter-kalcite/src/parser.c

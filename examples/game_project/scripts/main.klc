@@ -1,26 +1,57 @@
 @scene
 class Main extends Game {
     var score: u32 = 0;
-    fn update() -> void {
-        if Input.action_held("Left") { score += 1; }
-    }
+    var won: bool = false;
+    var bumps: u16 = 0;
 
-    fn on_player_moved(value: i16) -> void {
-        score += 1;
+    fn on_core_collected(value: u32) -> void {
+        score = package_bonus(score);
+        ProjectSave.set_score("QUEST_SAVE", score);
     }
 
     fn on_player_collided() -> void {
-        score = package_bonus(score + 9);
+        bumps += 1;
+        Audio.tone(140, 35, 48);
+    }
+
+    fn on_finished() -> void {
+        won = true;
+        Audio.tone(1040, 180, 96);
+    }
+
+    fn on_restarted() -> void {
+        score = 0;
+        won = false;
+        bumps = 0;
     }
 
     fn draw() -> void {
-        Draw.clear(Color.Black);
-        Draw.camera(1, 0);
-        Draw.tilemap("level.csv", "mascot-sheet.png", 32, 32, 0, 0);
-        Draw.sprite_region("mascot-sheet.png", 12, 72, 32, 0, 32, 32);
-        Draw.sprite_frame("mascot.ksheet", 0, 52, 72);
-        if score > 0 {
-            Draw.rect(0, 0, 4, 4, Color.White);
+        Draw.clear(Color.Blue);
+        Draw.camera(0, 0);
+        Draw.tilemap("level.csv", "terrain-sheet.png", 32, 32, 0, 0);
+        Draw.rect(128, 160, 32, 32, Color.Orange);
+        Draw.rect(132, 164, 24, 24, Color.Black);
+        Draw.rect(136, 168, 16, 16, Color.Orange);
+        Draw.rect(224, 160, 32, 32, Color.Orange);
+        Draw.rect(228, 164, 24, 24, Color.Black);
+        Draw.rect(232, 168, 16, 16, Color.Orange);
+
+        Draw.rect(0, 0, 320, 25, Color.Black);
+        Draw.text("KALCITE QUEST", 8, 8, Color.Orange, Color.Black);
+        Draw.text("CORES", 238, 8, Color.White, Color.Black);
+        Draw.number(score, 294, 8, Color.Yellow, Color.Black);
+
+        if score == 0 && !won {
+            Draw.rect(53, 38, 214, 22, Color.Black);
+            Draw.text("ARROWS MOVE - OK JUMPS", 63, 46, Color.White, Color.Black);
+        }
+
+        if won {
+            Draw.rect(49, 73, 222, 72, Color.Black);
+            Draw.rect(53, 77, 214, 64, Color.Orange);
+            Draw.rect(57, 81, 206, 56, Color.Black);
+            Draw.text("QUEST COMPLETE!", 102, 93, Color.Yellow, Color.Black);
+            Draw.text("OK TO PLAY AGAIN", 105, 116, Color.White, Color.Black);
         }
     }
 }

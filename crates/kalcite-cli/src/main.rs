@@ -110,6 +110,10 @@ fn build_desktop_command(args: &[String], run: bool, runner_args: &[String]) -> 
             eprintln!("no kalcite.toml found from {}", input.display());
             return ExitCode::FAILURE;
         };
+        if let Err(error) = sync_project_packages(&root) {
+            eprintln!("package sync failed: {error}");
+            return ExitCode::FAILURE;
+        }
         let manifest = match load_manifest(&root) {
             Ok(v) => v,
             Err(e) => {
@@ -280,13 +284,17 @@ fn build_nwa_command(args: &[String]) -> ExitCode {
     };
     let input = PathBuf::from(input_arg);
     let (source, mut output, mut app_name, generated_root, resources) = if input.is_dir() {
-        if project_command(&[input_arg.clone()], false) != ExitCode::SUCCESS {
-            return ExitCode::FAILURE;
-        }
         let Some(root) = find_root(&input) else {
             eprintln!("no kalcite.toml found from {}", input.display());
             return ExitCode::FAILURE;
         };
+        if let Err(error) = sync_project_packages(&root) {
+            eprintln!("package sync failed: {error}");
+            return ExitCode::FAILURE;
+        }
+        if project_command(&[input_arg.clone()], false) != ExitCode::SUCCESS {
+            return ExitCode::FAILURE;
+        }
         let manifest = match load_manifest(&root) {
             Ok(manifest) => manifest,
             Err(error) => {
@@ -655,53 +663,48 @@ fn package_sync_command(args: &[String]) -> ExitCode {
         .first()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    let path = root.join("kalcite.lock");
-    let lock = match kalcite_package::load(&path) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("{e}");
-            return ExitCode::FAILURE;
+    match sync_project_packages(&root) {
+        Ok(count) => {
+            println!("synced {count} packages");
+            ExitCode::SUCCESS
         }
-    };
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn sync_project_packages(root: &Path) -> Result<usize, String> {
+    let lock = kalcite_package::load(&root.join("kalcite.lock"))?;
     let cache = root.join(".kalcite/packages");
-    let _ = fs::create_dir_all(&cache);
+    fs::create_dir_all(&cache).map_err(|error| error.to_string())?;
     if let Err(error) = kalcite_package::verify(&lock, &cache) {
         // A missing cache is expected before sync; structural lock errors are not.
         if !error.contains("checksum mismatch") {
-            eprintln!("lockfile: {error}");
-            return ExitCode::FAILURE;
+            return Err(format!("lockfile: {error}"));
         }
     }
     for (name, p) in &lock.packages {
         if let Some(local) = p.source.strip_prefix("path:") {
             let src = root.join(local);
             let dst = cache.join(name);
-            if let Err(e) = kalcite_package::materialize(&src, &dst) {
-                eprintln!("package `{name}`: {e}");
-                return ExitCode::FAILURE;
-            }
+            kalcite_package::materialize(&src, &dst)
+                .map_err(|error| format!("package `{name}`: {error}"))?;
             if !p.checksum.is_empty() {
-                let got = match kalcite_package::checksum_path(&dst) {
-                    Ok(checksum) => checksum,
-                    Err(error) => {
-                        eprintln!("package `{name}`: {error}");
-                        return ExitCode::FAILURE;
-                    }
-                };
+                let got = kalcite_package::checksum_path(&dst)
+                    .map_err(|error| format!("package `{name}`: {error}"))?;
                 if got != p.checksum {
-                    eprintln!("package `{name}`: checksum mismatch");
-                    return ExitCode::FAILURE;
+                    return Err(format!("package `{name}`: checksum mismatch"));
                 }
             }
         } else {
-            eprintln!(
-                "package `{name}`: network sources are intentionally not fetched by this minimal resolver; vendor it with path:"
-            );
-            return ExitCode::FAILURE;
+            return Err(format!(
+                "package `{name}`: network sources are intentionally not fetched; vendor it with path:"
+            ));
         }
     }
-    println!("synced {} packages", lock.packages.len());
-    ExitCode::SUCCESS
+    Ok(lock.packages.len())
 }
 
 fn test_command(args: &[String]) -> ExitCode {

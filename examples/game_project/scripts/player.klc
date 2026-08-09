@@ -2,16 +2,102 @@
 class Player extends Node2D {
     @export
     var speed: i16 = 2;
-    var x: i16 = 0;
-    signal moved(value: i16);
+    var x: i16 = 16;
+    var y: i16 = 160;
+    var velocity_y: i16 = 0;
+    var frame: u16 = 0;
+    var anim_tick: u16 = 0;
+    var core_one: bool = false;
+    var core_two: bool = false;
+    var core_three: bool = false;
+    var finished: bool = false;
+
+    signal core_collected(value: u32);
     signal collided();
+    signal quest_finished();
+    signal restarted();
 
     fn update() -> void {
-        var next: i16 = Physics.move_x(x, 0, 8, 8, speed, 8, 0, 8, 8);
-        if next == x {
+        if finished && Input.action_pressed("Jump") {
+            x = 16;
+            y = 160;
+            velocity_y = 0;
+            core_one = false;
+            core_two = false;
+            core_three = false;
+            finished = false;
+            restarted.emit();
+        }
+
+        var dx: i16 = Input.action_axis("Left", "Right") * speed;
+        var next: i16 = Physics.move_x(x, y, 24, 32, dx, 128, 160, 32, 32);
+        var next_two: i16 = Physics.move_x(x, y, 24, 32, dx, 224, 160, 32, 32);
+        if next_two == x {
+            next = x;
+        }
+        if dx != 0 && next == x {
             collided.emit();
         }
         x = next;
-        moved.emit(x);
+
+        if x < 0 { x = 0; }
+        if x > 296 { x = 296; }
+
+        if Input.action_pressed("Jump") && y == 160 && !finished {
+            velocity_y = -11;
+            Audio.tone(520, 45, 56);
+        }
+        if y < 160 || velocity_y < 0 {
+            y += velocity_y;
+            velocity_y += 1;
+        }
+        if y > 160 {
+            y = 160;
+            velocity_y = 0;
+        }
+
+        if dx != 0 {
+            anim_tick += 1;
+            if anim_tick > 7 {
+                frame = (frame + 1) % 2;
+                anim_tick = 0;
+            }
+        }
+
+        if !core_one && x > 64 {
+            core_one = true;
+            core_collected.emit(1);
+            Audio.tone(720, 55, 72);
+        }
+        if !core_two && x > 164 && x < 205 && y < 145 {
+            core_two = true;
+            core_collected.emit(1);
+            Audio.tone(820, 55, 78);
+        }
+        if !core_three && x > 260 {
+            core_three = true;
+            core_collected.emit(1);
+            Audio.tone(920, 55, 84);
+        }
+        if core_one && core_two && core_three && x > 286 && !finished {
+            finished = true;
+            quest_finished.emit();
+        }
+    }
+
+    fn draw() -> void {
+        if !core_one {
+            Draw.rect(75, 143, 10, 17, Color.Cyan);
+            Draw.rect(78, 140, 4, 23, Color.White);
+        }
+        if !core_two {
+            Draw.rect(174, 118, 10, 17, Color.Yellow);
+            Draw.rect(177, 115, 4, 23, Color.White);
+        }
+        if !core_three {
+            Draw.rect(270, 143, 10, 17, Color.Green);
+            Draw.rect(273, 140, 4, 23, Color.White);
+        }
+        Draw.sprite_frame("mascot.ksheet", frame, x - 4, y);
     }
 }
