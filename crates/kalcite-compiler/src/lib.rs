@@ -143,6 +143,13 @@ pub enum NativeError {
     Syntax(kalcite_syntax::Diagnostic),
     Backend(kalcite_backend_numworks::Error),
 }
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ProjectResources<'a> {
+    pub entry_scene: &'a [u8],
+    pub assets: &'a [u8],
+    pub scene_runtime: Option<&'a str>,
+}
 impl core::fmt::Display for NativeError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
@@ -159,6 +166,24 @@ pub fn emit_numworks_project(
 ) -> Result<(), NativeError> {
     let mir = lower(source).map_err(NativeError::Syntax)?;
     kalcite_backend_numworks::emit_project(&mir, app_name, root).map_err(NativeError::Backend)
+}
+
+pub fn emit_numworks_project_with_resources(
+    source: &str,
+    app_name: &str,
+    root: &std::path::Path,
+    resources: ProjectResources<'_>,
+) -> Result<(), NativeError> {
+    let mir = lower(source).map_err(NativeError::Syntax)?;
+    kalcite_backend_numworks::emit_project_with_resources(
+        &mir,
+        app_name,
+        root,
+        Some(resources.entry_scene),
+        Some(resources.assets),
+        resources.scene_runtime,
+    )
+    .map_err(NativeError::Backend)
 }
 
 #[derive(Debug)]
@@ -182,6 +207,24 @@ pub fn emit_desktop_project(
 ) -> Result<(), DesktopError> {
     let mir = lower(source).map_err(DesktopError::Syntax)?;
     kalcite_backend_desktop::emit_project(&mir, app_name, root).map_err(DesktopError::Backend)
+}
+
+pub fn emit_desktop_project_with_resources(
+    source: &str,
+    app_name: &str,
+    root: &std::path::Path,
+    resources: ProjectResources<'_>,
+) -> Result<(), DesktopError> {
+    let mir = lower(source).map_err(DesktopError::Syntax)?;
+    kalcite_backend_desktop::emit_project_with_resources(
+        &mir,
+        app_name,
+        root,
+        Some(resources.entry_scene),
+        Some(resources.assets),
+        resources.scene_runtime,
+    )
+    .map_err(DesktopError::Backend)
 }
 
 #[cfg(test)]

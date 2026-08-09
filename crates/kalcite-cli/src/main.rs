@@ -103,7 +103,7 @@ fn build_desktop_command(args: &[String], run: bool, runner_args: &[String]) -> 
         return ExitCode::FAILURE;
     };
     let input = PathBuf::from(input_arg);
-    let (source, mut output, mut app_name, generated_root) = if input.is_dir() {
+    let (source, mut output, mut app_name, generated_root, resources) = if input.is_dir() {
         let Some(root) = find_root(&input) else {
             eprintln!("no kalcite.toml found from {}", input.display());
             return ExitCode::FAILURE;
@@ -154,7 +154,20 @@ fn build_desktop_command(args: &[String], run: bool, runner_args: &[String]) -> 
             format!("{}.desktop", manifest.name)
         });
         let generated = root.join(".kalcite/desktop/main");
-        (source, output, manifest.name.clone(), generated)
+        let resources = match compile_project_resources(&root, &manifest, &index) {
+            Ok(resources) => resources,
+            Err(error) => {
+                eprintln!("project resources: {error}");
+                return ExitCode::FAILURE;
+            }
+        };
+        (
+            source,
+            output,
+            manifest.name.clone(),
+            generated,
+            Some(resources),
+        )
     } else {
         let source = match fs::read_to_string(&input) {
             Ok(v) => v,
@@ -171,7 +184,7 @@ fn build_desktop_command(args: &[String], run: bool, runner_args: &[String]) -> 
             .to_string();
         let generated =
             PathBuf::from(".kalcite/desktop").join(input.file_stem().unwrap_or_default());
-        (source, output, app_name, generated)
+        (source, output, app_name, generated, None)
     };
     let mut no_build = false;
     let mut i = 1;
@@ -195,7 +208,22 @@ fn build_desktop_command(args: &[String], run: bool, runner_args: &[String]) -> 
             }
         }
     }
-    if let Err(e) = kalcite_compiler::emit_desktop_project(&source, &app_name, &generated_root) {
+    let emitted = match resources.as_ref() {
+        Some((scene, assets, scene_runtime)) => {
+            kalcite_compiler::emit_desktop_project_with_resources(
+                &source,
+                &app_name,
+                &generated_root,
+                kalcite_compiler::ProjectResources {
+                    entry_scene: scene,
+                    assets,
+                    scene_runtime: Some(scene_runtime),
+                },
+            )
+        }
+        None => kalcite_compiler::emit_desktop_project(&source, &app_name, &generated_root),
+    };
+    if let Err(e) = emitted {
         eprintln!("desktop project generation failed: {e}");
         return ExitCode::FAILURE;
     }
@@ -247,7 +275,7 @@ fn build_nwa_command(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     };
     let input = PathBuf::from(input_arg);
-    let (source, mut output, mut app_name, generated_root) = if input.is_dir() {
+    let (source, mut output, mut app_name, generated_root, resources) = if input.is_dir() {
         if project_command(&[input_arg.clone()], false) != ExitCode::SUCCESS {
             return ExitCode::FAILURE;
         }
@@ -279,11 +307,19 @@ fn build_nwa_command(args: &[String]) -> ExitCode {
             source.push_str(&script.source);
             source.push('\n');
         }
+        let resources = match compile_project_resources(&root, &manifest, &index) {
+            Ok(resources) => resources,
+            Err(error) => {
+                eprintln!("project resources: {error}");
+                return ExitCode::FAILURE;
+            }
+        };
         (
             source,
             root.join(format!("{}.nwa", manifest.name)),
             default_numworks_name(&manifest.name),
             root.join(".kalcite/numworks/main"),
+            Some(resources),
         )
     } else {
         let source = match fs::read_to_string(&input) {
@@ -306,6 +342,7 @@ fn build_nwa_command(args: &[String]) -> ExitCode {
             input.with_extension("nwa"),
             app_name,
             generated_root,
+            None,
         )
     };
     let mut no_build = false;
@@ -336,8 +373,22 @@ fn build_nwa_command(args: &[String]) -> ExitCode {
         }
     }
 
-    if let Err(error) = kalcite_compiler::emit_numworks_project(&source, &app_name, &generated_root)
-    {
+    let emitted = match resources.as_ref() {
+        Some((scene, assets, scene_runtime)) => {
+            kalcite_compiler::emit_numworks_project_with_resources(
+                &source,
+                &app_name,
+                &generated_root,
+                kalcite_compiler::ProjectResources {
+                    entry_scene: scene,
+                    assets,
+                    scene_runtime: Some(scene_runtime),
+                },
+            )
+        }
+        None => kalcite_compiler::emit_numworks_project(&source, &app_name, &generated_root),
+    };
+    if let Err(error) = emitted {
         eprintln!("NumWorks project generation failed: {error}");
         return ExitCode::FAILURE;
     }
@@ -925,6 +976,38 @@ fn init_command(args: &[String]) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn compile_project_resources(
+    root: &Path,
+    manifest: &kalcite_project::ProjectManifest,
+    index: &kalcite_project::ProjectIndex,
+) -> Result<(Vec<u8>, Vec<u8>, String), String> {
+    let scene_path = root.join(&manifest.entry_scene);
+    let scene = kalcite_scene::load(&scene_path)
+        .map_err(|error| format!("{}: {error}", scene_path.display()))?;
+    let diagnostics = validate_scene(index, &scene, &scene_path);
+    if diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == Severity::Error)
+    {
+        return Err(diagnostics
+            .into_iter()
+            .map(|diagnostic| {
+                format!(
+                    "{}[{}]: {}",
+                    diagnostic.path.display(),
+                    diagnostic.code,
+                    diagnostic.message
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n"));
+    }
+    let scene_runtime = kalcite_project::emit_scene_runtime(index, &scene)?;
+    let scene = kalcite_scene::try_encode_compiled(&scene)?;
+    let assets = kalcite_assets::pack_dir(&root.join(&manifest.assets_dir))?;
+    Ok((scene, kalcite_assets::encode_pack(&assets), scene_runtime))
 }
 
 fn project_command(args: &[String], build: bool) -> ExitCode {

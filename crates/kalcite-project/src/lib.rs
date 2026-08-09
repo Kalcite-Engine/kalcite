@@ -325,6 +325,132 @@ pub fn validate_scene(
     diagnostics
 }
 
+pub fn emit_scene_runtime(
+    index: &ProjectIndex,
+    scene: &kalcite_scene::Scene,
+) -> Result<String, String> {
+    let scripted = scene
+        .node_defs
+        .iter()
+        .filter_map(|node| node.script.as_deref().map(|script| (node, script)))
+        .collect::<Vec<_>>();
+    if scripted.is_empty() {
+        return Err("entry scene has no scripted nodes".into());
+    }
+
+    let mut out = String::from("use crate::game;\n\npub struct SceneRuntime {\n");
+    for (node, script) in &scripted {
+        out.push_str(&format!(
+            "    pub {}: game::{script},\n",
+            scene_ident(&node.path)
+        ));
+    }
+    out.push_str("}\n\nimpl Default for SceneRuntime {\n    fn default() -> Self {\n");
+    for (node, script) in &scripted {
+        let ident = scene_ident(&node.path);
+        out.push_str(&format!(
+            "        let mut {ident} = game::{script}::default();\n"
+        ));
+        if let Some(class) = class_by_name(index, script) {
+            for (key, value) in &node.properties {
+                if class.members.iter().any(|member| matches!(member, Member::Field(field) if field.name == *key && has_attr(&field.attrs, "export"))) {
+                    out.push_str(&format!("        {ident}.{key} = {};\n", rust_scene_value(value)));
+                }
+            }
+        }
+    }
+    out.push_str("        let mut scene = Self {\n");
+    for (node, _) in &scripted {
+        let ident = scene_ident(&node.path);
+        out.push_str(&format!("            {ident},\n"));
+    }
+    out.push_str(
+        "        };\n        scene.ready();\n        scene\n    }\n}\n\nimpl SceneRuntime {\n",
+    );
+    for hook in ["ready", "update", "draw"] {
+        out.push_str(&format!("    pub fn {hook}(&mut self) {{\n"));
+        for (node, script) in &scripted {
+            if class_by_name(index, script).is_some_and(|class| {
+                class.members.iter().any(
+                    |member| matches!(member, Member::Function(function) if function.name == hook),
+                )
+            }) {
+                out.push_str(&format!(
+                    "        self.{}.{hook}();\n",
+                    scene_ident(&node.path)
+                ));
+            }
+        }
+        out.push_str("    }\n");
+    }
+    for connection in &scene.connections {
+        let source_script = scripted
+            .iter()
+            .find(|(node, _)| node.path == connection.from)
+            .map(|(_, script)| *script);
+        let signal = source_script
+            .and_then(|script| class_by_name(index, script))
+            .and_then(|class| {
+                class.members.iter().find_map(|member| match member {
+                    Member::Signal(signal) if signal.name == connection.signal => Some(signal),
+                    _ => None,
+                })
+            })
+            .ok_or_else(|| {
+                format!(
+                    "missing validated signal `{}.{}`",
+                    connection.from, connection.signal
+                )
+            })?;
+        let params = signal
+            .params
+            .iter()
+            .map(|param| format!("{}: {}", param.name, rust_scene_type(&param.ty)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let args = signal
+            .params
+            .iter()
+            .map(|param| param.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!(
+            "    pub fn emit_{}_{}(&mut self{}{}) {{\n        self.{}.{}({args});\n    }}\n",
+            scene_ident(&connection.from),
+            connection.signal,
+            if params.is_empty() { "" } else { ", " },
+            params,
+            scene_ident(&connection.to),
+            connection.method,
+        ));
+    }
+    out.push_str("}\n");
+    Ok(out)
+}
+
+fn scene_ident(path: &str) -> String {
+    let mut out = String::new();
+    for character in path.chars() {
+        if character.is_ascii_alphanumeric() || character == '_' {
+            out.push(character.to_ascii_lowercase());
+        } else if !out.ends_with('_') {
+            out.push('_');
+        }
+    }
+    out.trim_matches('_').to_string()
+}
+
+fn rust_scene_type(ty: &str) -> &str {
+    match ty.trim() {
+        "fx8" => "i16",
+        other => other,
+    }
+}
+
+fn rust_scene_value(value: &str) -> String {
+    value.trim().trim_end_matches("fx").to_string()
+}
+
 fn class_by_name<'a>(index: &'a ProjectIndex, name: &str) -> Option<&'a Class> {
     index.scripts.iter().find_map(|script| {
         script.module.items.iter().find_map(|item| match item {
@@ -557,6 +683,11 @@ mod tests {
         .unwrap();
 
         assert!(validate_scene(&index, &scene, Path::new("main.kscn")).is_empty());
+        let runtime = emit_scene_runtime(&index, &scene).unwrap();
+        assert!(runtime.contains("pub main: game::Main"));
+        assert!(runtime.contains("pub main_player: game::Player"));
+        assert!(runtime.contains("self.main.receive(value);"));
+        assert!(runtime.contains("pub fn emit_main_player_moved(&mut self, value: u16)"));
 
         let bad_scene = kalcite_scene::parse(
             "[node \"Main\"]\nscript=\"Main\"\n[node \"Player\" parent=\"Main\"]\nscript=\"Player\"\n@signal Main/Player.missing -> Main.receive\n",

@@ -31,6 +31,17 @@ impl core::fmt::Display for Error {
 /// writer exists here. Cargo produces the relocatable ARM ELF consumed by
 /// `nwlink install-nwa` and by the NumWorks third-party app uploader.
 pub fn emit_project(program: &Program, app_name: &str, root: &Path) -> Result<(), Error> {
+    emit_project_with_resources(program, app_name, root, None, None, None)
+}
+
+pub fn emit_project_with_resources(
+    program: &Program,
+    app_name: &str,
+    root: &Path,
+    scene_data: Option<&[u8]>,
+    assets: Option<&[u8]>,
+    scene_runtime: Option<&str>,
+) -> Result<(), Error> {
     let scene = program.scene().ok_or(Error::NoScene)?;
     if app_name.is_empty() || app_name.len() > 9 || !app_name.is_ascii() {
         return Err(Error::InvalidName);
@@ -47,6 +58,13 @@ pub fn emit_project(program: &Program, app_name: &str, root: &Path) -> Result<()
     fs::write(root.join("src/numworks.rs"), NUMWORKS_ADVANCED)?;
     fs::write(root.join("src/runtime.rs"), RUNTIME)?;
     fs::write(root.join("src/stdlib.rs"), kalcite_stdlib::RUST_SOURCE)?;
+    write_project_data(root, scene_data, assets)?;
+    fs::write(
+        root.join("src/scene_runtime.rs"),
+        scene_runtime
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("pub type SceneRuntime = crate::game::{};\n", scene.name)),
+    )?;
     let game = kalcite_backend_rust::emit_game(program).map_err(Error::Rust)?;
     fs::write(
         root.join("src/game.rs"),
@@ -62,16 +80,23 @@ pub fn emit_project(program: &Program, app_name: &str, root: &Path) -> Result<()
     let name_len = name.len();
     let name_bytes = name.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
 
-    let has_update = scene
-        .functions
-        .iter()
-        .any(|function| function.name == "update");
-    let has_draw = scene
-        .functions
-        .iter()
-        .any(|function| function.name == "draw");
+    let has_update = scene_runtime.is_some()
+        || scene
+            .functions
+            .iter()
+            .any(|function| function.name == "update");
+    let has_draw = scene_runtime.is_some()
+        || scene
+            .functions
+            .iter()
+            .any(|function| function.name == "draw");
+    let root_type = if scene_runtime.is_some() {
+        "scene_runtime::SceneRuntime".to_string()
+    } else {
+        format!("game::{}", scene.name)
+    };
     let main = MAIN
-        .replace("__SCENE__", &scene.name)
+        .replace("__SCENE__", &root_type)
         .replace("__NAME_LEN__", &name_len.to_string())
         .replace("__NAME_BYTES__", &name_bytes)
         .replace(
@@ -81,6 +106,25 @@ pub fn emit_project(program: &Program, app_name: &str, root: &Path) -> Result<()
         .replace("__DRAW_CALL__", if has_draw { "game.draw();" } else { "" });
     fs::write(root.join("src/main.rs"), main)?;
     Ok(())
+}
+
+fn write_project_data(
+    root: &Path,
+    scene: Option<&[u8]>,
+    assets: Option<&[u8]>,
+) -> Result<(), std::io::Error> {
+    let scene = scene.unwrap_or_default();
+    let assets = assets.unwrap_or_default();
+    fs::write(root.join("src/entry.ksc2"), scene)?;
+    fs::write(root.join("src/assets.kap"), assets)?;
+    fs::write(
+        root.join("src/project_data.rs"),
+        format!(
+            "#[used]\npub static ENTRY_SCENE: [u8; {}] = *include_bytes!(\"entry.ksc2\");\n#[used]\npub static ASSET_PACK: [u8; {}] = *include_bytes!(\"assets.kap\");\n",
+            scene.len(),
+            assets.len()
+        ),
+    )
 }
 
 const CARGO: &str = r#"[package]
@@ -624,6 +668,9 @@ mod platform;
 mod runtime;
 mod stdlib;
 mod numworks;
+mod project_data;
+#[allow(dead_code, unused_mut)]
+mod scene_runtime;
 #[allow(dead_code, non_camel_case_types, non_snake_case, unused_imports, unused_mut, unused_parens, unused_variables)]
 mod game;
 
@@ -642,7 +689,7 @@ include!(concat!(env!("OUT_DIR"), "/icon.rs"));
 
 #[no_mangle]
 pub fn main() {
-    let mut game = game::__SCENE__::default();
+    let mut game = __SCENE__::default();
     loop {
         platform::frame_begin();
         if Input::held(Key::Back) || Input::held(Key::Home) { break; }
@@ -720,5 +767,31 @@ mod abi_regression_tests {
         assert!(PLATFORM.contains("self.full_present();self.immediate=true"));
         assert!(PLATFORM.contains("SMALL_FONT_W"));
         assert!(MAIN.contains("platform::frame_begin();"));
+    }
+
+    #[test]
+    fn generated_project_data_embeds_exact_resources() {
+        let root = std::env::temp_dir().join(format!(
+            "kalcite-numworks-data-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        write_project_data(&root, Some(b"KSC2scene"), Some(b"KAP0assets")).unwrap();
+        assert_eq!(
+            std::fs::read(root.join("src/entry.ksc2")).unwrap(),
+            b"KSC2scene"
+        );
+        assert_eq!(
+            std::fs::read(root.join("src/assets.kap")).unwrap(),
+            b"KAP0assets"
+        );
+        let module = std::fs::read_to_string(root.join("src/project_data.rs")).unwrap();
+        assert!(module.contains("ENTRY_SCENE: [u8; 9]"));
+        assert!(module.contains("ASSET_PACK: [u8; 10]"));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

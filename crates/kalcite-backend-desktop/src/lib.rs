@@ -28,26 +28,51 @@ impl core::fmt::Display for Error {
 /// used by the NumWorks backend. The host runner only presents that buffer in
 /// a resizable native window using nearest-neighbour integer scaling.
 pub fn emit_project(program: &Program, app_name: &str, root: &Path) -> Result<(), Error> {
+    emit_project_with_resources(program, app_name, root, None, None, None)
+}
+
+pub fn emit_project_with_resources(
+    program: &Program,
+    app_name: &str,
+    root: &Path,
+    scene_data: Option<&[u8]>,
+    assets: Option<&[u8]>,
+    scene_runtime: Option<&str>,
+) -> Result<(), Error> {
     let scene = program.scene().ok_or(Error::NoScene)?;
     fs::create_dir_all(root.join("src"))?;
     fs::write(root.join("Cargo.toml"), cargo_manifest(app_name))?;
     fs::write(root.join("src/platform.rs"), PLATFORM)?;
     fs::write(root.join("src/runtime.rs"), RUNTIME)?;
     fs::write(root.join("src/stdlib.rs"), kalcite_stdlib::RUST_SOURCE)?;
+    write_project_data(root, scene_data, assets)?;
+    fs::write(
+        root.join("src/scene_runtime.rs"),
+        scene_runtime
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("pub type SceneRuntime = crate::game::{};\n", scene.name)),
+    )?;
     fs::write(
         root.join("src/game.rs"),
         kalcite_backend_rust::emit_game(program).map_err(Error::Rust)?,
     )?;
-    let has_update = scene
-        .functions
-        .iter()
-        .any(|function| function.name == "update");
-    let has_draw = scene
-        .functions
-        .iter()
-        .any(|function| function.name == "draw");
+    let has_update = scene_runtime.is_some()
+        || scene
+            .functions
+            .iter()
+            .any(|function| function.name == "update");
+    let has_draw = scene_runtime.is_some()
+        || scene
+            .functions
+            .iter()
+            .any(|function| function.name == "draw");
+    let root_type = if scene_runtime.is_some() {
+        "scene_runtime::SceneRuntime".to_string()
+    } else {
+        format!("game::{}", scene.name)
+    };
     let main = MAIN
-        .replace("__SCENE__", &scene.name)
+        .replace("__SCENE__", &root_type)
         .replace("__APP_NAME__", &escape_rust_string(app_name))
         .replace(
             "__UPDATE_CALL__",
@@ -56,6 +81,25 @@ pub fn emit_project(program: &Program, app_name: &str, root: &Path) -> Result<()
         .replace("__DRAW_CALL__", if has_draw { "game.draw();" } else { "" });
     fs::write(root.join("src/main.rs"), main)?;
     Ok(())
+}
+
+fn write_project_data(
+    root: &Path,
+    scene: Option<&[u8]>,
+    assets: Option<&[u8]>,
+) -> Result<(), std::io::Error> {
+    let scene = scene.unwrap_or_default();
+    let assets = assets.unwrap_or_default();
+    fs::write(root.join("src/entry.ksc2"), scene)?;
+    fs::write(root.join("src/assets.kap"), assets)?;
+    fs::write(
+        root.join("src/project_data.rs"),
+        format!(
+            "#[used]\npub static ENTRY_SCENE: [u8; {}] = *include_bytes!(\"entry.ksc2\");\n#[used]\npub static ASSET_PACK: [u8; {}] = *include_bytes!(\"assets.kap\");\n",
+            scene.len(),
+            assets.len()
+        ),
+    )
 }
 
 fn escape_rust_string(value: &str) -> String {
@@ -325,6 +369,9 @@ pub fn save_ppm(path: &str) -> io::Result<()> {
 const MAIN: &str = r#"mod platform;
 mod runtime;
 mod stdlib;
+mod project_data;
+#[allow(dead_code, unused_mut)]
+mod scene_runtime;
 #[allow(dead_code, non_camel_case_types, non_snake_case, unused_imports, unused_mut, unused_parens, unused_variables)]
 mod game;
 
@@ -392,7 +439,7 @@ fn scale_nearest(src: &[u32], dst: &mut [u32], scale: usize) {
     }
 }
 
-fn frame(game: &mut game::__SCENE__) {
+fn frame(game: &mut __SCENE__) {
     __UPDATE_CALL__
     __DRAW_CALL__
     platform::frame_end();
@@ -414,7 +461,7 @@ fn write_profile(file: &mut Option<File>, frame_index:u64, start:Instant) {
 }
 
 fn run_headless(opts: &Options) {
-    let mut game=game::__SCENE__::default();
+    let mut game=__SCENE__::default();
     let mut profile=open_profile(opts);
     for i in 0..opts.frames { let started=Instant::now(); frame(&mut game); write_profile(&mut profile,i,started); }
     platform::save_ppm(&opts.screenshot).expect("failed to save screenshot");
@@ -431,7 +478,7 @@ fn run_window(opts: &Options) {
         WindowOptions { resize:false, scale_mode:ScaleMode::Stretch, ..WindowOptions::default() },
     ).expect("unable to create Kalcite desktop window");
 
-    let mut game=game::__SCENE__::default();
+    let mut game=__SCENE__::default();
     let mut logical=vec![0u32;platform::PIXELS];
     let mut presented=vec![0u32;width*height];
     let frame_time=Duration::from_secs_f64(1.0/opts.fps as f64);
@@ -491,5 +538,31 @@ mod generated_module_regression_tests {
     fn desktop_runner_exposes_csv_profiling() {
         assert!(MAIN.contains("--profile"));
         assert!(MAIN.contains("frame,frame_us,fps"));
+    }
+
+    #[test]
+    fn generated_project_data_embeds_exact_resources() {
+        let root = std::env::temp_dir().join(format!(
+            "kalcite-desktop-data-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        write_project_data(&root, Some(b"KSC2scene"), Some(b"KAP0assets")).unwrap();
+        assert_eq!(
+            std::fs::read(root.join("src/entry.ksc2")).unwrap(),
+            b"KSC2scene"
+        );
+        assert_eq!(
+            std::fs::read(root.join("src/assets.kap")).unwrap(),
+            b"KAP0assets"
+        );
+        let module = std::fs::read_to_string(root.join("src/project_data.rs")).unwrap();
+        assert!(module.contains("ENTRY_SCENE: [u8; 9]"));
+        assert!(module.contains("ASSET_PACK: [u8; 10]"));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -31,9 +31,11 @@ works.
 - [ ] Compile every scene in `scenes_dir`, not only the entry scene
 - [ ] Validate exported property names and values against script field types
 - [ ] Resolve and validate autoload class declarations
-- [ ] Generate static scene construction, property initialization, autoload
-      construction, and direct signal dispatch in target projects
-- [ ] Consume compiled scene metadata in desktop and NumWorks runtimes
+- [x] Generate static node ownership, exported-property initialization, ordered
+      lifecycle calls, and typed direct signal dispatch entry points
+- [x] Embed compiled scene and asset-pack bytes in desktop and NumWorks binaries
+- [ ] Construct autoloads and route language-level `signal.emit(...)` calls into
+      the generated direct dispatch entry points
 
 ## Integration fixture
 
@@ -52,8 +54,8 @@ works.
 ## Runtime subsystem status
 
 - Assets: deterministic IDs, PNG decoding, RGB565 conversion, RLE, CSV tile
-  import, and pack emission exist. Runtime pack lookup, deduplicated payloads,
-  spritesheet metadata, and target embedding remain.
+  import, pack emission, and target embedding exist. Runtime pack lookup,
+  deduplicated payloads, and spritesheet metadata remain.
 - Renderer: ordering, camera offset, sprite/tilemap command types, and tests exist.
   Asset-backed drawing and the optimized NumWorks RLE run path remain.
 - Physics: deterministic AABB blocking exists as an isolated crate. It is not yet
