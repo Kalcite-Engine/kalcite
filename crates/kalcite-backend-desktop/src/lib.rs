@@ -36,9 +36,13 @@ pub fn emit_project(program: &Program, app_name: &str, root: &Path) -> Result<()
         root.join("src/game.rs"),
         kalcite_backend_rust::emit_game(program).map_err(Error::Rust)?,
     )?;
+    let has_update = scene.functions.iter().any(|function| function.name == "update");
+    let has_draw = scene.functions.iter().any(|function| function.name == "draw");
     let main = MAIN
         .replace("__SCENE__", &scene.name)
-        .replace("__APP_NAME__", &escape_rust_string(app_name));
+        .replace("__APP_NAME__", &escape_rust_string(app_name))
+        .replace("__UPDATE_CALL__", if has_update { "game.update();" } else { "" })
+        .replace("__DRAW_CALL__", if has_draw { "game.draw();" } else { "" });
     fs::write(root.join("src/main.rs"), main)?;
     Ok(())
 }
@@ -376,8 +380,8 @@ fn scale_nearest(src: &[u32], dst: &mut [u32], scale: usize) {
 }
 
 fn frame(game: &mut game::__SCENE__) {
-    game.update();
-    game.draw();
+    __UPDATE_CALL__
+    __DRAW_CALL__
     platform::frame_end();
 }
 
@@ -463,6 +467,12 @@ mod generated_module_regression_tests {
     #[test]
     fn generated_game_module_owns_codegen_lint_policy() {
         assert!(MAIN.contains("#[allow(dead_code, non_camel_case_types, non_snake_case, unused_imports, unused_mut, unused_parens, unused_variables)]\nmod game;"));
+    }
+
+    #[test]
+    fn scene_lifecycle_hooks_are_template_gated() {
+        assert!(MAIN.contains("__UPDATE_CALL__"));
+        assert!(MAIN.contains("__DRAW_CALL__"));
     }
 
     #[test]

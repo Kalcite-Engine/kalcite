@@ -133,7 +133,23 @@ pub fn discover(root: &Path, manifest: &ProjectManifest) -> Result<ProjectIndex,
 
 pub fn validate(index: &ProjectIndex) -> Vec<ProjectDiagnostic> {
     let mut out = Vec::new();
-    let builtins: BTreeSet<&str> = ["Entity", "Node", "Node2D", "Scene", "Resource", "Sprite", "Camera2D", "Timer", "Input", "Vec2i", "Vec2fx", "Color565"].into_iter().collect();
+    let builtins: BTreeSet<&str> = [
+        "Game",
+        "Entity",
+        "Node",
+        "Node2D",
+        "Scene",
+        "Resource",
+        "Sprite",
+        "Camera2D",
+        "Timer",
+        "Input",
+        "Vec2i",
+        "Vec2fx",
+        "Color565",
+    ]
+    .into_iter()
+    .collect();
     let mut declarations: BTreeMap<&str, Vec<&Path>> = BTreeMap::new();
 
     for script in &index.scripts {
@@ -261,6 +277,66 @@ speed = 2.0
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test] fn manifest_round_trip() { let m=ProjectManifest::parse(&ProjectManifest::default().encode()); assert_eq!(m.scripts_dir,"scripts"); }
-    #[test] fn snake_names() { assert_eq!(snake_case("PlayerController"), "player_controller"); }
+    #[test]
+    fn manifest_round_trip() {
+        let m = ProjectManifest::parse(&ProjectManifest::default().encode());
+        assert_eq!(m.scripts_dir, "scripts");
+    }
+
+    #[test]
+    fn snake_names() {
+        assert_eq!(snake_case("PlayerController"), "player_controller");
+    }
+
+    #[test]
+    fn game_is_a_builtin_project_base() {
+        let source = "@scene class Main extends Game {}";
+        let module = parse(source).unwrap();
+        let path = PathBuf::from("scripts/main.klc");
+        let mut index = ProjectIndex::default();
+
+        for item in &module.items {
+            if let Item::Class(class) = item {
+                index
+                    .symbols
+                    .insert(class.name.clone(), symbol_for(class, &path));
+            }
+        }
+
+        index.scripts.push(ScriptUnit {
+            path,
+            source: source.into(),
+            module,
+        });
+
+        let diagnostics = validate(&index);
+        assert!(
+            !diagnostics.iter().any(|d| d.code == "KLP1002"),
+            "Game must be accepted as an engine builtin base: {diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn unknown_project_base_is_still_rejected() {
+        let source = "class Main extends DefinitelyMissingBase {}";
+        let module = parse(source).unwrap();
+        let path = PathBuf::from("scripts/main.klc");
+        let mut index = ProjectIndex::default();
+
+        for item in &module.items {
+            if let Item::Class(class) = item {
+                index
+                    .symbols
+                    .insert(class.name.clone(), symbol_for(class, &path));
+            }
+        }
+
+        index.scripts.push(ScriptUnit {
+            path,
+            source: source.into(),
+            module,
+        });
+
+        assert!(validate(&index).iter().any(|d| d.code == "KLP1002"));
+    }
 }

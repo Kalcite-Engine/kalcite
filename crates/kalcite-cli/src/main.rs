@@ -4,7 +4,7 @@ use kalcite_object::Target;
 use kalcite_project::{discover, find_root, init_project, load_manifest, validate};
 
 fn usage() {
-    eprintln!("usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|web]\n  kalcite build-app FILE.klc --target numworks [-o GAME.nwa] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|web]");
+    eprintln!("usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|web]\n  kalcite build-app FILE.klc --target numworks [-o GAME.nwa] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME SOURCE [REVISION] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|web]");
 }
 
 fn main() -> ExitCode {
@@ -21,6 +21,9 @@ fn main() -> ExitCode {
         "scene-check" => scene_check_command(&args[2..]),
         "asset-png" => asset_png_command(&args[2..]),
         "package-lock" => package_lock_command(&args[2..]),
+        "package-add" => package_add_command(&args[2..]),
+        "package-remove" => package_remove_command(&args[2..]),
+        "package-sync" => package_sync_command(&args[2..]),
         "test" => test_command(&args[2..]),
         "run" => run_command(&args[2..]),
         _ => file_command(command, &args[2..]),
@@ -218,6 +221,25 @@ fn package_lock_command(args: &[String]) -> ExitCode {
     if let Err(e)=kalcite_package::save(&path,&lock){eprintln!("{}: {e}",path.display());return ExitCode::FAILURE;} println!("locked {} packages in {}",lock.packages.len(),path.display()); ExitCode::SUCCESS
 }
 
+fn package_add_command(args: &[String]) -> ExitCode {
+    if args.len() < 2 { eprintln!("usage: kalcite package-add NAME SOURCE [REVISION] [DIR]"); return ExitCode::FAILURE; }
+    let name=&args[0]; let source=&args[1]; let revision=args.get(2).filter(|x|!x.starts_with('-')).cloned().unwrap_or_else(||"local".into());
+    let root=args.get(3).map(PathBuf::from).unwrap_or_else(||PathBuf::from(".")); let path=root.join("kalcite.lock");
+    let mut lock=match kalcite_package::load(&path){Ok(v)=>v,Err(e)=>{eprintln!("{e}");return ExitCode::FAILURE;}};
+    let checksum=if let Some(local)=source.strip_prefix("path:"){fs::read(root.join(local)).map(|b|kalcite_package::checksum(&b)).unwrap_or_default()}else{String::new()};
+    lock.packages.insert(name.clone(),kalcite_package::Package{source:source.clone(),revision,checksum});
+    match kalcite_package::save(&path,&lock){Ok(())=>{println!("added package `{name}`");ExitCode::SUCCESS},Err(e)=>{eprintln!("{e}");ExitCode::FAILURE}}
+}
+fn package_remove_command(args: &[String]) -> ExitCode {
+    let Some(name)=args.first() else {eprintln!("usage: kalcite package-remove NAME [DIR]");return ExitCode::FAILURE;}; let root=args.get(1).map(PathBuf::from).unwrap_or_else(||PathBuf::from("."));let path=root.join("kalcite.lock");
+    let mut lock=match kalcite_package::load(&path){Ok(v)=>v,Err(e)=>{eprintln!("{e}");return ExitCode::FAILURE;}};if lock.packages.remove(name).is_none(){eprintln!("package `{name}` is not locked");return ExitCode::FAILURE;}match kalcite_package::save(&path,&lock){Ok(())=>{println!("removed package `{name}`");ExitCode::SUCCESS},Err(e)=>{eprintln!("{e}");ExitCode::FAILURE}}
+}
+fn package_sync_command(args: &[String]) -> ExitCode {
+    let root=args.first().map(PathBuf::from).unwrap_or_else(||PathBuf::from("."));let path=root.join("kalcite.lock");let lock=match kalcite_package::load(&path){Ok(v)=>v,Err(e)=>{eprintln!("{e}");return ExitCode::FAILURE;}};let cache=root.join(".kalcite/packages");let _=fs::create_dir_all(&cache);
+    for(name,p)in &lock.packages{if let Some(local)=p.source.strip_prefix("path:"){let src=root.join(local);let dst=cache.join(name);if let Err(e)=fs::copy(&src,&dst){eprintln!("package `{name}`: {e}");return ExitCode::FAILURE;}if !p.checksum.is_empty(){let got=kalcite_package::checksum(&fs::read(&dst).unwrap_or_default());if got!=p.checksum{eprintln!("package `{name}`: checksum mismatch");return ExitCode::FAILURE;}}}else{eprintln!("package `{name}`: network sources are intentionally not fetched by this minimal resolver; vendor it with path:");return ExitCode::FAILURE;}}
+    println!("synced {} packages",lock.packages.len());ExitCode::SUCCESS
+}
+
 fn test_command(args: &[String]) -> ExitCode {
     let dir=args.first().map(PathBuf::from).unwrap_or_else(||PathBuf::from("tests/klc"));
     let cases=match kalcite_test_runner::discover(&dir){Ok(v)=>v,Err(e)=>{eprintln!("{}: {e}",dir.display());return ExitCode::FAILURE;}}; let mut failed=0;
@@ -382,8 +404,8 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
     let scene_path = root.join(&manifest.entry_scene);
     let scene = match kalcite_scene::load(&scene_path) { Ok(v) => v, Err(e) => { eprintln!("{}: scene error: {e}", relative(&root,&scene_path).display()); return ExitCode::FAILURE; } };
     let assets = match kalcite_assets::pack_dir(&root.join(&manifest.assets_dir)) { Ok(v)=>v, Err(e)=>{eprintln!("asset pipeline: {e}");return ExitCode::FAILURE;} };
-    let input_path=root.join(&manifest.input_map); if !input_path.is_file(){eprintln!("warning: input map missing: {}",relative(&root,&input_path).display());}
-    let save_path=root.join(&manifest.save_schema); if !save_path.is_file(){eprintln!("warning: save schema missing: {}",relative(&root,&save_path).display());}
+    let input_path=root.join(&manifest.input_map); if input_path.is_file(){match fs::read_to_string(&input_path).map_err(|e|e.to_string()).and_then(|s|kalcite_input::parse_map(&s)){Ok(_)=>{},Err(e)=>{eprintln!("{}: input map error: {e}",relative(&root,&input_path).display());return ExitCode::FAILURE;}}}else{eprintln!("warning: input map missing: {}",relative(&root,&input_path).display());}
+    let save_path=root.join(&manifest.save_schema); if save_path.is_file(){match fs::read_to_string(&save_path).map_err(|e|e.to_string()).and_then(|s|kalcite_save::parse_schema(&s)){Ok(_)=>{},Err(e)=>{eprintln!("{}: save schema error: {e}",relative(&root,&save_path).display());return ExitCode::FAILURE;}}}else{eprintln!("warning: save schema missing: {}",relative(&root,&save_path).display());}
     println!("ok: {} scripts, {} global classes, {} scene nodes, {} assets", index.scripts.len(), index.symbols.len(), scene.nodes.len(), assets.len());
     if !build { return ExitCode::SUCCESS; }
     let pack_path=root.join(".kalcite/assets.kap"); if let Some(parent)=pack_path.parent(){let _=fs::create_dir_all(parent);} if let Err(e)=fs::write(&pack_path,kalcite_assets::encode_pack(&assets)){eprintln!("{}: {e}",pack_path.display());return ExitCode::FAILURE;}

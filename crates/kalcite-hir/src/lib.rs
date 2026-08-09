@@ -163,8 +163,21 @@ impl<'a> BodyParser<'a>{
     }
     Ok(Stmt::Native{language,target,body})
    },
-   TokenKind::If=>{self.bump();self.expect(TokenKind::LParen)?;let c=self.expr(0)?;self.expect(TokenKind::RParen)?;let t=self.block()?;let e=if matches!(self.peek(),TokenKind::Else){self.bump();if matches!(self.peek(),TokenKind::If){vec![self.stmt()?]}else{self.block()?}}else{Vec::new()};Ok(Stmt::If{condition:c,then_body:t,else_body:e})},
-   TokenKind::While=>{self.bump();self.expect(TokenKind::LParen)?;let c=self.expr(0)?;self.expect(TokenKind::RParen)?;Ok(Stmt::While{condition:c,body:self.block()?})},
+   TokenKind::If=>{
+    self.bump();
+    let c=self.condition()?;
+    let t=self.block()?;
+    let e=if matches!(self.peek(),TokenKind::Else){
+     self.bump();
+     if matches!(self.peek(),TokenKind::If){vec![self.stmt()?]}else{self.block()?}
+    }else{Vec::new()};
+    Ok(Stmt::If{condition:c,then_body:t,else_body:e})
+   },
+   TokenKind::While=>{
+    self.bump();
+    let c=self.condition()?;
+    Ok(Stmt::While{condition:c,body:self.block()?})
+   },
    TokenKind::Return=>{self.bump();if matches!(self.peek(),TokenKind::Semicolon){self.bump();Ok(Stmt::Return(None))}else{let e=self.expr(0)?;self.expect(TokenKind::Semicolon)?;Ok(Stmt::Return(Some(e)))}},
    TokenKind::Var|TokenKind::Const=>self.local(),
    _=>{
@@ -195,6 +208,16 @@ impl<'a> BodyParser<'a>{
      Ok(Stmt::Expr(expr))
     }
    }
+  }
+ }
+ fn condition(&mut self)->Result<Expr,Diagnostic>{
+  if matches!(self.peek(),TokenKind::LParen){
+   self.bump();
+   let value=self.expr(0)?;
+   self.expect(TokenKind::RParen)?;
+   Ok(value)
+  }else{
+   self.expr(0)
   }
  }
  fn local(&mut self)->Result<Stmt,Diagnostic>{
@@ -296,6 +319,14 @@ fn binop(k:&TokenKind)->Option<(u8,BinaryOp)>{Some(match k{TokenKind::OrOr=>(1,B
 #[cfg(test)] mod tests{
  use super::*;
  #[test] fn parses_game_body(){let body=r#"position += velocity; if (position.y <= 0 || position.y >= 232) { velocity.y = -velocity.y; }"#;let s=parse_body(body).unwrap();assert_eq!(s.len(),2);}
+
+ #[test]
+ fn accepts_conditions_with_or_without_parentheses(){
+  let with_parens=parse_body("if (Input.held(Key.Left)) { x += 1; } while (x < 4) { x += 1; }").unwrap();
+  let without_parens=parse_body("if Input.held(Key.Left) { x += 1; } while x < 4 { x += 1; }").unwrap();
+  assert_eq!(with_parens.len(),2);
+  assert_eq!(without_parens.len(),2);
+ }
 }
 
 

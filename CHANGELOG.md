@@ -1,3 +1,26 @@
+# 0.14.0
+
+- Expand `.kscn` parsing with hierarchy, node properties, autoload declarations and KSCN v2 compiled scene metadata.
+- Validate input maps and typed save schemas during `project-check` / `project-build`.
+- Add deterministic input action edges, axes and fixed-capacity touch state.
+- Add typed save-schema parsing and migration metadata validation.
+- Add local deterministic package `add`, `remove`, and `sync` workflow with lockfile checksums.
+- Keep generated desktop/NumWorks lifecycle hooks statically gated.
+
+# 0.13.5
+
+- Fix NumWorks lifecycle-hook template replacement order before `fs::write`.
+
+# 0.13.4
+
+- Make scene `update()` and `draw()` lifecycle hooks optional in generated desktop and NumWorks runners.
+- Gate lifecycle calls from MIR scene metadata instead of requiring empty user methods.
+
+# 0.13.3
+
+- Accept `if condition {}` and `while condition {}` in HIR, while preserving `if (condition)`/`while (condition)` compatibility.
+- Add regression coverage for both condition styles.
+
 # 0.13.2
 
 - `kalcite run DIR` now builds and launches multi-script projects.
