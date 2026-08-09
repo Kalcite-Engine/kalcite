@@ -1,1 +1,7 @@
-class Smoke { public u32 Value = 42; public void update() { local u32 x = Value; } }
+class Smoke {
+    var value: u32 = 42;
+
+    fn update() -> void {
+        u32 copy = value;
+    }
+}

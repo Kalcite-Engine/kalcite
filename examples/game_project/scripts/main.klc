@@ -1,0 +1,7 @@
+@scene
+class Main extends Game {
+    var score: u32 = 0;
+    fn update() -> void {
+        if Input.held(Key.Left) { score += 1; }
+    }
+}

@@ -132,3 +132,13 @@
 - Cached the NumWorks keyboard scan once per frame instead of issuing one syscall per key query.
 - Added adaptive ~60 Hz frame pacing instead of an unconditional post-vblank sleep.
 - Kept rendering heap-free: no 153.6 KiB RGB565 framebuffer is allocated.
+
+## 0.13.0 - Engine integration
+- Project validation now resolves the entry scene, assets, input map and save schema.
+- Asset directories compile to deterministic KAP0 packs with stable FNV-1a asset IDs.
+- Renderer gained tilemap commands, camera transforms and draw-call accounting.
+- Physics2D gained deterministic axis-separated AABB move-and-slide.
+- Save gained KSAV headers, schema IDs, version checks and migration entry points.
+- Profiler gained frame aggregation, peaks and average frame time.
+- Package locks can verify pinned revisions and cached checksums.
+- New projects include input.kmap and save.kschema.

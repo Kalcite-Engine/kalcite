@@ -1,0 +1,3 @@
+@node Main
+@node Main.Player
+@signal Main.Player.moved -> Main.on_player_moved

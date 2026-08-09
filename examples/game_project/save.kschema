@@ -1,0 +1,3 @@
+schema=GameProject.State
+version=1
+score=u32

@@ -10,6 +10,9 @@ pub struct ProjectManifest {
     pub entry_scene: String,
     pub scripts_dir: String,
     pub scenes_dir: String,
+    pub assets_dir: String,
+    pub input_map: String,
+    pub save_schema: String,
     pub target: String,
 }
 
@@ -20,6 +23,9 @@ impl Default for ProjectManifest {
             entry_scene: "scenes/main.kscn".into(),
             scripts_dir: "scripts".into(),
             scenes_dir: "scenes".into(),
+            assets_dir: "assets".into(),
+            input_map: "input.kmap".into(),
+            save_schema: "save.kschema".into(),
             target: "portable".into(),
         }
     }
@@ -37,6 +43,9 @@ impl ProjectManifest {
                 "entry_scene" => out.entry_scene = value,
                 "scripts_dir" => out.scripts_dir = value,
                 "scenes_dir" => out.scenes_dir = value,
+                "assets_dir" => out.assets_dir = value,
+                "input_map" => out.input_map = value,
+                "save_schema" => out.save_schema = value,
                 "target" => out.target = value,
                 _ => {}
             }
@@ -45,7 +54,7 @@ impl ProjectManifest {
     }
 
     pub fn encode(&self) -> String {
-        format!("[project]\nname = \"{}\"\nentry_scene = \"{}\"\nscripts_dir = \"{}\"\nscenes_dir = \"{}\"\ntarget = \"{}\"\n", self.name, self.entry_scene, self.scripts_dir, self.scenes_dir, self.target)
+        format!("[project]\nname = \"{}\"\nentry_scene = \"{}\"\nscripts_dir = \"{}\"\nscenes_dir = \"{}\"\nassets_dir = \"{}\"\ninput_map = \"{}\"\nsave_schema = \"{}\"\ntarget = \"{}\"\n", self.name, self.entry_scene, self.scripts_dir, self.scenes_dir, self.assets_dir, self.input_map, self.save_schema, self.target)
     }
 }
 
@@ -174,6 +183,8 @@ pub fn init_project(root: &Path, name: &str) -> Result<(), ProjectError> {
     write_new(root.join("scripts/player.klc"), PLAYER_SCRIPT)?;
     write_new(root.join("scripts/game.klc"), GAME_SCRIPT)?;
     write_new(root.join("scenes/main.kscn"), MAIN_SCENE)?;
+    write_new(root.join("input.kmap"), INPUT_MAP)?;
+    write_new(root.join("save.kschema"), SAVE_SCHEMA)?;
     write_new(root.join(".gitignore"), ".kalcite/\nbuild/\n*.kco\n")?;
     Ok(())
 }
@@ -233,6 +244,8 @@ class Game extends Node {
     }
 }
 "#;
+const INPUT_MAP: &str = "Jump=OK\nLeft=Left\nRight=Right\nPause=Back\n";
+const SAVE_SCHEMA: &str = "schema=Game.State\nversion=1\nscore=u32\n";
 const MAIN_SCENE: &str = r#"[scene]
 root = "Main"
 

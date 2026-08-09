@@ -1,0 +1,5 @@
+@component
+class Player extends Node2D {
+    @export
+    var speed: i16 = 2;
+}

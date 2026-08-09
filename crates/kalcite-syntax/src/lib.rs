@@ -250,8 +250,21 @@ mod native_block_tests {
     }
     #[test]
     fn lexes_native_asm_as_raw_asm_macro_body() {
-        let src = r#"class G { fn tick() -> void { unsafe asm[numworks] { \"nop\", options(nomem, nostack) } } }"#;
+        let src = r#"class G { fn tick() -> void { unsafe asm[numworks] { "nop", options(nomem, nostack) } } }"#;
         let tokens = lex(src).unwrap();
         assert!(tokens.iter().any(|t| matches!(&t.kind, TokenKind::NativeBlock{language,..} if language=="asm")));
     }
+    #[test]
+    fn native_asm_allows_register_placeholders_and_braces_in_strings() {
+        let src = r#"class G { fn tick() -> void { unsafe asm[numworks] { "mov {0}, {1}", out(reg) dst, in(reg) src, options(nomem, nostack) } } }"#;
+        let tokens = lex(src).unwrap();
+        assert!(tokens.iter().any(|t| matches!(
+            &t.kind,
+            TokenKind::NativeBlock { language, target, body }
+                if language == "asm"
+                    && target.as_deref() == Some("numworks")
+                    && body.contains("mov {0}, {1}")
+        )));
+    }
+
 }

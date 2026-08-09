@@ -356,8 +356,14 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
         eprintln!("{}: {level}[{}]: {}", relative(&root, &d.path).display(), d.code, d.message);
     }
     if diagnostics.iter().any(|d| d.severity == Severity::Error) { return ExitCode::FAILURE; }
-    println!("ok: {} scripts, {} global classes", index.scripts.len(), index.symbols.len());
+    let scene_path = root.join(&manifest.entry_scene);
+    let scene = match kalcite_scene::load(&scene_path) { Ok(v) => v, Err(e) => { eprintln!("{}: scene error: {e}", relative(&root,&scene_path).display()); return ExitCode::FAILURE; } };
+    let assets = match kalcite_assets::pack_dir(&root.join(&manifest.assets_dir)) { Ok(v)=>v, Err(e)=>{eprintln!("asset pipeline: {e}");return ExitCode::FAILURE;} };
+    let input_path=root.join(&manifest.input_map); if !input_path.is_file(){eprintln!("warning: input map missing: {}",relative(&root,&input_path).display());}
+    let save_path=root.join(&manifest.save_schema); if !save_path.is_file(){eprintln!("warning: save schema missing: {}",relative(&root,&save_path).display());}
+    println!("ok: {} scripts, {} global classes, {} scene nodes, {} assets", index.scripts.len(), index.symbols.len(), scene.nodes.len(), assets.len());
     if !build { return ExitCode::SUCCESS; }
+    let pack_path=root.join(".kalcite/assets.kap"); if let Some(parent)=pack_path.parent(){let _=fs::create_dir_all(parent);} if let Err(e)=fs::write(&pack_path,kalcite_assets::encode_pack(&assets)){eprintln!("{}: {e}",pack_path.display());return ExitCode::FAILURE;}
 
     let target = parse_target_option(args).unwrap_or_else(|| target_from_name(&manifest.target));
     let out_dir = root.join(".kalcite/objects");

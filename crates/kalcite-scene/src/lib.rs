@@ -1,1 +1,41 @@
-use std::collections::BTreeSet; #[derive(Debug)] pub struct Scene{pub nodes:Vec<String>,pub signals:Vec<(String,String)>} pub fn parse(s:&str)->Result<Scene,String>{let mut n=Vec::new();let mut g:Vec<(String,String)>=Vec::new();for l in s.lines(){let l=l.trim();if let Some(v)=l.strip_prefix("@node "){n.push(v.split_whitespace().next().ok_or("bad node")?.into())}else if let Some(v)=l.strip_prefix("@signal "){let(a,b)=v.split_once("->").ok_or("bad signal")?;g.push((a.trim().into(),b.trim().into()))}}let p:BTreeSet<_>=n.iter().map(String::as_str).collect();for(a,b)in&g{if !p.contains(a.rsplit_once('.').ok_or("bad source")?.0)||!p.contains(b.rsplit_once('.').ok_or("bad target")?.0){return Err("unresolved static signal".into())}}Ok(Scene{nodes:n,signals:g})}
+use std::{collections::BTreeSet, fs, path::Path};
+
+#[derive(Debug)]
+pub struct Scene {
+    pub name: String,
+    pub nodes: Vec<String>,
+    pub signals: Vec<(String, String)>,
+}
+
+pub fn parse(source: &str) -> Result<Scene, String> {
+    parse_named(source, "Scene")
+}
+
+fn parse_named(source: &str, name: &str) -> Result<Scene, String> {
+    let mut nodes = Vec::new();
+    let mut signals: Vec<(String, String)> = Vec::new();
+    for line in source.lines() {
+        let line = line.trim();
+        if let Some(value) = line.strip_prefix("@node ") {
+            nodes.push(value.split_whitespace().next().ok_or("bad node")?.to_string());
+        } else if let Some(value) = line.strip_prefix("@signal ") {
+            let (from, to) = value.split_once("->").ok_or("bad signal")?;
+            signals.push((from.trim().to_string(), to.trim().to_string()));
+        }
+    }
+    let paths: BTreeSet<_> = nodes.iter().map(String::as_str).collect();
+    for (from, to) in &signals {
+        let from_node = from.rsplit_once('.').ok_or("bad source")?.0;
+        let to_node = to.rsplit_once('.').ok_or("bad target")?.0;
+        if !paths.contains(from_node) || !paths.contains(to_node) {
+            return Err(format!("unresolved static signal: {from} -> {to}"));
+        }
+    }
+    Ok(Scene { name: name.to_string(), nodes, signals })
+}
+
+pub fn load(path: &Path) -> Result<Scene, String> {
+    let source = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let name = path.file_stem().and_then(|v| v.to_str()).unwrap_or("Scene");
+    parse_named(&source, name)
+}
