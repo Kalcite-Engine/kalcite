@@ -7,3 +7,9 @@ license.workspace=true
 tower-lsp="0.20"
 tokio={version="1",features=["rt-multi-thread","io-std","macros"]}
 kalcite-compiler={path="../kalcite-compiler"}
+kalcite-syntax={path="../kalcite-syntax"}
+kalcite-project={path="../kalcite-project"}
+kalcite-scene={path="../kalcite-scene"}
+kalcite-assets={path="../kalcite-assets"}
+kalcite-input={path="../kalcite-input"}
+kalcite-save={path="../kalcite-save"}

@@ -70,13 +70,13 @@ works.
 - Packages: deterministic lock/add/remove/sync, safe local file/tree
   materialization, normalized checksums, and compiler/project source discovery
   are complete.
-- LSP: compiler diagnostics work over stdio. Scene, asset, signal, input-action,
-  export, and engine-symbol navigation/completion remain.
+- LSP: live-buffer compiler/resource diagnostics, project-aware scene signal and
+  export validation, asset/input reference checks, engine/project completion,
+  hover, document symbols, and definition navigation are complete.
 - Audio: a lightweight tone/stop abstraction and command accounting are linked
   on both targets, with graceful no-output behavior where hardware audio is
   unavailable.
 
 ## Next implementation order
 
-1. Add engine-aware LSP diagnostics, completion, and navigation.
-2. Repeat the full completion audit and native validation.
+1. Repeat the full completion audit and native validation.

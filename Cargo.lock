@@ -414,7 +414,13 @@ dependencies = [
 name = "kalcite-lsp"
 version = "0.14.0"
 dependencies = [
+ "kalcite-assets",
  "kalcite-compiler",
+ "kalcite-input",
+ "kalcite-project",
+ "kalcite-save",
+ "kalcite-scene",
+ "kalcite-syntax",
  "tokio",
  "tower-lsp",
 ]
