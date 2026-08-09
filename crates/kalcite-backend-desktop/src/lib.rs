@@ -312,7 +312,7 @@ mod stdlib;
 mod game;
 
 use minifb::{Key as HostKey, ScaleMode, Window, WindowOptions};
-use std::{env, thread, time::{Duration, Instant}};
+use std::{env, fs::File, io::Write, thread, time::{Duration, Instant}};
 
 const APP_NAME: &str = "__APP_NAME__";
 const DEFAULT_SCALE: usize = 3;
@@ -325,10 +325,11 @@ struct Options {
     headless: bool,
     frames: u64,
     screenshot: String,
+    profile: Option<String>,
 }
 
 fn options() -> Options {
-    let mut out=Options{scale:DEFAULT_SCALE,fps:DEFAULT_FPS,headless:false,frames:180,screenshot:"kalcite-frame.ppm".into()};
+    let mut out=Options{scale:DEFAULT_SCALE,fps:DEFAULT_FPS,headless:false,frames:180,screenshot:"kalcite-frame.ppm".into(),profile:None};
     let mut args=env::args().skip(1);
     while let Some(arg)=args.next() {
         match arg.as_str() {
@@ -337,8 +338,9 @@ fn options() -> Options {
             "--headless" => out.headless=true,
             "--frames" => out.frames=args.next().and_then(|v|v.parse().ok()).unwrap_or(180),
             "--screenshot" => out.screenshot=args.next().unwrap_or_else(||"kalcite-frame.ppm".into()),
+            "--profile" => out.profile=args.next(),
             "--help"|"-h" => {
-                println!("{APP_NAME} (Kalcite desktop runner)\n  --scale N       integer window scale (1..8)\n  --fps N         target FPS (1..240)\n  --headless      run without a window\n  --frames N      frames in headless mode\n  --screenshot P  PPM output used by F12/headless mode\n\nKeys: arrows, Enter/Space=OK, Escape/Backspace=Back, H=Home, F12=screenshot, Q=quit");
+                println!("{APP_NAME} (Kalcite desktop runner)\n  --scale N       integer window scale (1..8)\n  --fps N         target FPS (1..240)\n  --headless      run without a window\n  --frames N      frames in headless mode\n  --screenshot P  PPM output used by F12/headless mode\n  --profile P     write per-frame CSV timings\n\nKeys: arrows, Enter/Space=OK, Escape/Backspace=Back, H=Home, F12=screenshot, Q=quit");
                 std::process::exit(0);
             }
             other => eprintln!("warning: unknown runner option `{other}`"),
@@ -379,9 +381,25 @@ fn frame(game: &mut game::__SCENE__) {
     platform::frame_end();
 }
 
+
+fn open_profile(opts: &Options) -> Option<File> {
+    let path=opts.profile.as_ref()?;
+    match File::create(path) {
+        Ok(mut f) => { let _=writeln!(f,"frame,frame_us,fps"); Some(f) },
+        Err(e) => { eprintln!("profile open failed for {path}: {e}"); None }
+    }
+}
+
+fn write_profile(file: &mut Option<File>, frame_index:u64, start:Instant) {
+    let us=start.elapsed().as_micros() as u64;
+    let fps=if us>0 { 1_000_000.0/us as f64 } else { 0.0 };
+    if let Some(f)=file.as_mut() { let _=writeln!(f,"{frame_index},{us},{fps:.3}"); }
+}
+
 fn run_headless(opts: &Options) {
     let mut game=game::__SCENE__::default();
-    for _ in 0..opts.frames { frame(&mut game); }
+    let mut profile=open_profile(opts);
+    for i in 0..opts.frames { let started=Instant::now(); frame(&mut game); write_profile(&mut profile,i,started); }
     platform::save_ppm(&opts.screenshot).expect("failed to save screenshot");
     println!("Kalcite headless run complete: {} frames -> {}",opts.frames,opts.screenshot);
 }
@@ -402,8 +420,11 @@ fn run_window(opts: &Options) {
     let frame_time=Duration::from_secs_f64(1.0/opts.fps as f64);
     let mut next_frame=Instant::now();
     let mut screenshot_down=false;
+    let mut profile=open_profile(opts);
+    let mut frame_index=0u64;
 
     while window.is_open() && !window.is_key_down(HostKey::Q) {
+        let started=Instant::now();
         set_inputs(&window);
         frame(&mut game);
         platform::host_copy_xrgb8888(&mut logical);
@@ -418,6 +439,8 @@ fn run_window(opts: &Options) {
             }
         }
         screenshot_down=now_screenshot;
+        write_profile(&mut profile,frame_index,started);
+        frame_index+=1;
 
         next_frame+=frame_time;
         let now=Instant::now();
@@ -440,5 +463,11 @@ mod generated_module_regression_tests {
     #[test]
     fn generated_game_module_owns_codegen_lint_policy() {
         assert!(MAIN.contains("#[allow(dead_code, non_camel_case_types, non_snake_case, unused_imports, unused_mut, unused_parens, unused_variables)]\nmod game;"));
+    }
+
+    #[test]
+    fn desktop_runner_exposes_csv_profiling() {
+        assert!(MAIN.contains("--profile"));
+        assert!(MAIN.contains("frame,frame_us,fps"));
     }
 }

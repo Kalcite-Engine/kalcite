@@ -1,3 +1,13 @@
+# 0.13.2
+
+- `kalcite run DIR` now builds and launches multi-script projects.
+- Desktop runner supports `--profile FILE.csv` per-frame timing output.
+
+# 0.13.1
+
+- Fix project validation so the engine `Game` base is recognized as a builtin.
+- Add regression coverage for builtin and missing project base classes.
+
 # 0.12.2
 
 - Fix `kalcite-scene` static signal graph type inference on recent Rust.

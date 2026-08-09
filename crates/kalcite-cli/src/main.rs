@@ -46,7 +46,7 @@ fn run_command(args: &[String]) -> ExitCode {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--scale" | "--fps" | "--screenshot" if i + 1 < args.len() => {
+            "--scale" | "--fps" | "--screenshot" | "--profile" if i + 1 < args.len() => {
                 runner_args.push(args[i].clone());
                 runner_args.push(args[i + 1].clone());
                 i += 2;
@@ -66,9 +66,33 @@ fn run_command(args: &[String]) -> ExitCode {
 fn build_desktop_command(args: &[String], run: bool, runner_args: &[String]) -> ExitCode {
     let Some(input_arg) = args.first() else { usage(); return ExitCode::FAILURE; };
     let input = PathBuf::from(input_arg);
-    let source = match fs::read_to_string(&input) { Ok(v) => v, Err(e) => { eprintln!("{}: {e}", input.display()); return ExitCode::FAILURE; } };
-    let mut output = input.with_extension(if cfg!(windows) { "exe" } else { "desktop" });
-    let mut app_name = input.file_stem().and_then(|x| x.to_str()).unwrap_or("Kalcite").to_string();
+    let (source, mut output, mut app_name, generated_root) = if input.is_dir() {
+        let Some(root) = find_root(&input) else { eprintln!("no kalcite.toml found from {}", input.display()); return ExitCode::FAILURE; };
+        let manifest = match load_manifest(&root) { Ok(v) => v, Err(e) => { eprintln!("manifest error: {e:?}"); return ExitCode::FAILURE; } };
+        let index = match discover(&root, &manifest) { Ok(v) => v, Err(e) => { eprintln!("project scan failed: {e:?}"); return ExitCode::FAILURE; } };
+        let diagnostics = validate(&index);
+        for d in &diagnostics {
+            let level = match d.severity { Severity::Warning => "warning", Severity::Error => "error" };
+            eprintln!("{}: {level}[{}]: {}", relative(&root, &d.path).display(), d.code, d.message);
+        }
+        if diagnostics.iter().any(|d| d.severity == Severity::Error) { return ExitCode::FAILURE; }
+        let mut scripts = index.scripts.iter().collect::<Vec<_>>();
+        scripts.sort_by(|a,b| a.path.cmp(&b.path));
+        let mut source = String::new();
+        for script in scripts {
+            source.push_str("\n// ---- "); source.push_str(&relative(&root,&script.path).display().to_string()); source.push_str(" ----\n");
+            source.push_str(&script.source); source.push('\n');
+        }
+        let output = root.join(".kalcite/bin").join(if cfg!(windows) { format!("{}.exe", manifest.name) } else { format!("{}.desktop", manifest.name) });
+        let generated = root.join(".kalcite/desktop/main");
+        (source, output, manifest.name.clone(), generated)
+    } else {
+        let source = match fs::read_to_string(&input) { Ok(v) => v, Err(e) => { eprintln!("{}: {e}", input.display()); return ExitCode::FAILURE; } };
+        let output = input.with_extension(if cfg!(windows) { "exe" } else { "desktop" });
+        let app_name = input.file_stem().and_then(|x| x.to_str()).unwrap_or("Kalcite").to_string();
+        let generated = PathBuf::from(".kalcite/desktop").join(input.file_stem().unwrap_or_default());
+        (source, output, app_name, generated)
+    };
     let mut no_build = false; let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -78,7 +102,6 @@ fn build_desktop_command(args: &[String], run: bool, runner_args: &[String]) -> 
             other => { eprintln!("unknown option `{other}`"); return ExitCode::FAILURE; }
         }
     }
-    let generated_root = PathBuf::from(".kalcite/desktop").join(input.file_stem().unwrap_or_default());
     if let Err(e) = kalcite_compiler::emit_desktop_project(&source, &app_name, &generated_root) {
         eprintln!("desktop project generation failed: {e}"); return ExitCode::FAILURE;
     }
