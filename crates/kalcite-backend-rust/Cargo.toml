@@ -1,0 +1,13 @@
+[package]
+name = "kalcite-backend-rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+kalcite-hir = { path = "../kalcite-hir" }
+kalcite-mir = { path = "../kalcite-mir" }
+
+[dev-dependencies]
+kalcite-syntax = { path = "../kalcite-syntax" }

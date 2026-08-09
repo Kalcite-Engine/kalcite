@@ -1,0 +1,16 @@
+[package]
+name = "kalcite-cli"
+version = "0.11.0"
+edition = "2024"
+license = "MIT"
+
+[[bin]]
+name = "kalcite"
+path = "src/main.rs"
+
+[dependencies]
+kalcite-compiler = { path = "../kalcite-compiler" }
+kalcite-linter = { path = "../kalcite-linter" }
+kalcite-project = { path = "../kalcite-project" }
+kalcite-object = { path = "../kalcite-object" }
+kalcite-stdlib = { path = "../kalcite-stdlib" }

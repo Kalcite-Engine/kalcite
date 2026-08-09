@@ -1,0 +1,11 @@
+name = "Kalcite"
+grammar = "kalcite"
+path_suffixes = ["klc"]
+line_comments = ["// "]
+block_comment = ["/*", "*/"]
+brackets = [
+  { start = "{", end = "}", close = true, newline = true },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "\"", end = "\"", close = true, newline = false }
+]

@@ -1,0 +1,96 @@
+{
+  "Kalcite component": {
+    "prefix": "kl-component",
+    "body": [
+      "@component",
+      "class ${1:Player} extends Node2D {",
+      "    @export",
+      "    var ${2:speed}: fx8 = ${3:1.5fx};",
+      "",
+      "    fn update() -> void {",
+      "        ${0}",
+      "    }",
+      "}"
+    ],
+    "description": "Create an attachable Kalcite component"
+  },
+  "Kalcite autoload": {
+    "prefix": "kl-autoload",
+    "body": [
+      "@autoload",
+      "class ${1:Game} extends Node {",
+      "    ${0}",
+      "}"
+    ],
+    "description": "Create a global autoload script"
+  },
+  "Kalcite exported field": {
+    "prefix": "kl-export",
+    "body": [
+      "@export",
+      "var ${1:name}: ${2:u8} = ${3:0};"
+    ],
+    "description": "Expose a field to the scene inspector"
+  },
+  "Kalcite node reference": {
+    "prefix": "kl-node",
+    "body": [
+      "@node(\"${1:Player}\")",
+      "var ${2:player}: ${3:Player};"
+    ],
+    "description": "Bind a typed scene node reference"
+  },
+  "Kalcite static pool": {
+    "prefix": "kl-pool",
+    "body": [
+      "@pool(${1:32})",
+      "class ${2:Bullet} extends Entity {",
+      "    var position: Vec2fx;",
+      "    ${0}",
+      "}",
+      "",
+      "var ${3:bullets}: Pool[${2:Bullet}; ${1:32}];"
+    ],
+    "description": "Create a fixed-capacity entity pool"
+  },
+  "Kalcite typed handle": {
+    "prefix": "kl-handle",
+    "body": [
+      "var ${1:entity}: Handle[${2:Entity}];"
+    ],
+    "description": "Declare a typed generational handle"
+  },
+  "Kalcite local variable": {
+    "prefix": "kl-local",
+    "body": [
+      "${1:i16} ${2:name} = ${3:0};"
+    ],
+    "description": "Declare an explicitly typed stack local"
+  },
+  "Kalcite inferred local": {
+    "prefix": "kl-var",
+    "body": [
+      "var ${1:name} = ${2:value};"
+    ],
+    "description": "Declare an inferred mutable stack local"
+  },
+  "Native Rust block": {
+    "prefix": "kl-rust",
+    "body": [
+      "unsafe rust[${1:numworks}] {",
+      "    ${2:// native Rust}",
+      "}"
+    ],
+    "description": "Embed target-gated native Rust (unsafe escape hatch)"
+  },
+  "Native ASM block": {
+    "prefix": "kl-asm",
+    "body": [
+      "unsafe asm[${1:numworks}] {",
+      "    \"${2:nop}\",",
+      "    options(nomem, nostack)",
+      "}"
+    ],
+    "description": "Embed target-gated core::arch::asm! arguments"
+  }
+}

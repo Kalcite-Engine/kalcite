@@ -1,0 +1,6 @@
+scene "Demo"
+@node /root Game
+@export title = "Demo"
+@node /root/Hud Hud parent /root
+@signal /root.done -> /root/Hud.show
+@autoload Saves SaveService

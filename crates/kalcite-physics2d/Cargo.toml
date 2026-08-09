@@ -1,0 +1,5 @@
+[package]
+name="kalcite-physics2d"
+version.workspace=true
+edition.workspace=true
+license.workspace=true

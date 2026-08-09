@@ -1,0 +1,6 @@
+[package]
+name="kalcite-engine-assets"
+version = "0.2.0"
+edition = "2024"
+license = "MIT"
+[dependencies]

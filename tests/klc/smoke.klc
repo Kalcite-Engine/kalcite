@@ -1,0 +1,1 @@
+class Smoke { public u32 Value = 42; public void update() { local u32 x = Value; } }

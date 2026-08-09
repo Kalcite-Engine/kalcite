@@ -1,0 +1,66 @@
+@scene
+class Pong extends Game {
+    const SCREEN: [u16; 2] = [320, 240];
+
+    @pool(1)
+    class Ball extends Entity {
+        var position: Vec2fx = Vec2fx(156, 116);
+        var velocity: Vec2fx = Vec2fx(2, 1);
+
+        fn update() -> void {
+            position += velocity;
+            if (position.y <= 2 || position.y >= 230) {
+                velocity.y = -velocity.y;
+            }
+        }
+    }
+
+    @pool(2)
+    class Paddle extends Entity {
+        var y: i16 = 100;
+
+        fn update() -> void {
+            if (Input.held(Key.Up)) { y -= 3; }
+            if (Input.held(Key.Down)) { y += 3; }
+            if (y < 4) { y = 4; }
+            if (y > 196) { y = 196; }
+        }
+    }
+
+    var ball: Ball;
+    var player: Paddle;
+    var cpu: Paddle;
+
+    fn update() -> void {
+        player.update();
+
+        if (cpu.y + 20 < ball.position.y) { cpu.y += 2; }
+        if (cpu.y + 20 > ball.position.y) { cpu.y -= 2; }
+        if (cpu.y < 4) { cpu.y = 4; }
+        if (cpu.y > 196) { cpu.y = 196; }
+
+        ball.update();
+
+        if (ball.velocity.x < 0 && ball.position.x <= 14 && ball.position.y + 8 >= player.y && ball.position.y <= player.y + 40) {
+            ball.velocity.x = -ball.velocity.x;
+            ball.position.x = 14;
+        }
+        if (ball.velocity.x > 0 && ball.position.x >= 298 && ball.position.y + 8 >= cpu.y && ball.position.y <= cpu.y + 40) {
+            ball.velocity.x = -ball.velocity.x;
+            ball.position.x = 298;
+        }
+
+        if (ball.position.x < -8 || ball.position.x > 320) {
+            ball.position = Vec2fx(156, 116);
+            ball.velocity.x = -ball.velocity.x;
+        }
+    }
+
+    fn draw() -> void {
+        Draw.clear(Color.Black);
+        Draw.rect(159, 0, 2, 240, Color.Blue);
+        Draw.rect(8, player.y, 6, 40, Color.White);
+        Draw.rect(304, cpu.y, 6, 40, Color.White);
+        Draw.rect(ball.position.x, ball.position.y, 8, 8, Color.Orange);
+    }
+}

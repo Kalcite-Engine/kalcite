@@ -1,0 +1,31 @@
+@scene
+class PoolDemo extends Game {
+    @pool(8)
+    class Bullet extends Entity {
+        var position: Vec2fx = Vec2fx(20, 120);
+        var velocity: Vec2fx = Vec2fx(2, 0);
+
+        fn update() -> void {
+            position += velocity;
+        }
+    }
+
+    var bullets: Pool[Bullet; 8];
+    var last_bullet: Handle[Bullet];
+
+    fn update() -> void {
+        if (!last_bullet.is_valid()) {
+            last_bullet = bullets.spawn(Bullet.new());
+        }
+
+        if (Input.held(Key.Back) && last_bullet.is_valid()) {
+            bullets.despawn(last_bullet);
+            last_bullet = Handle.invalid();
+        }
+    }
+
+    fn draw() -> void {
+        Draw.clear(Color.Black);
+        Draw.rect(10, 10, 100, 16, Color.Green);
+    }
+}

@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/kalcite-syntax",
+  "crates/kalcite-object",
+  "crates/kalcite-linter",
+  "crates/kalcite-project",
+  "crates/kalcite-compiler",
+  "crates/kalcite-hir",
+  "crates/kalcite-mir",
+  "crates/kalcite-backend-rust",
+  "crates/kalcite-backend-numworks",
+  "crates/kalcite-backend-desktop",
+  "crates/kalcite-cli",
+  "crates/kalcite-runtime-core",
+  "crates/kalcite-stdlib",
+  "crates/kalcite-engine-core",
+  "crates/kalcite-engine-assets",
+  "crates/kalcite-platform-api",
+  "crates/kalcite-platform-headless",
+  "crates/kalcite-platform-numworks",
+  "crates/kalcite-scene",
+  "crates/kalcite-assets",
+  "crates/kalcite-renderer",
+  "crates/kalcite-physics2d",
+  "crates/kalcite-input",
+  "crates/kalcite-audio",
+  "crates/kalcite-save",
+  "crates/kalcite-typecheck",
+  "crates/kalcite-profiler",
+  "crates/kalcite-package",
+  "crates/kalcite-mir-opt",
+  "crates/kalcite-test-runner",
+  "examples/pong",
+]
+
+[workspace.package]
+version = "0.12.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

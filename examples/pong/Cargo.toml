@@ -1,0 +1,9 @@
+[package]
+name="kalcite-pong"
+version = "0.2.0"
+edition = "2024"
+license = "MIT"
+[dependencies]
+kalcite-engine-core={path="../../crates/kalcite-engine-core"}
+kalcite-platform-api={path="../../crates/kalcite-platform-api"}
+kalcite-platform-headless={path="../../crates/kalcite-platform-headless"}

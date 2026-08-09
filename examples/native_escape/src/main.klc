@@ -1,0 +1,30 @@
+@scene
+class NativeEscapeDemo extends Game {
+    var ticks: u32 = 0;
+
+    fn update() -> void {
+        ticks += 1;
+
+        // Compiled only by desktop pipelines.
+        unsafe rust[desktop] {
+            core::hint::black_box(self.ticks);
+        }
+
+        // Compiled only for NumWorks (ARM bare metal).
+        unsafe rust[numworks] {
+            core::hint::spin_loop();
+        }
+
+        // The body is passed directly to core::arch::asm!(...).
+        unsafe asm[numworks] {
+            "nop",
+            options(nomem, nostack)
+        }
+    }
+
+    fn draw() -> void {
+        Draw.clear(Color.Black);
+        Draw.text("NATIVE ESCAPE", 8, 8, Color.Green, Color.Black);
+        Draw.number(ticks, 8, 28, Color.White, Color.Black);
+    }
+}

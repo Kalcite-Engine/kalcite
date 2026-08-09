@@ -1,0 +1,12 @@
+@component
+@pool(1)
+class Player extends Node2D {
+    @export
+    var speed: fx8 = 2.0fx;
+
+    signal coin_collected(value: u8);
+
+    fn update() -> void {
+        position.x += Input.axis(Key.Left, Key.Right) * speed;
+    }
+}

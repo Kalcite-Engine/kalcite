@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Kalcite",
+  "scopeName": "source.kalcite",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#annotations"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "name": "entity.name.function.kalcite"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "begin": "/\\*",
+          "end": "\\*/",
+          "name": "comment.block.kalcite"
+        },
+        {
+          "match": "//.*$",
+          "name": "comment.line.double-slash.kalcite"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.kalcite",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.kalcite"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "match": "\\b(0x[0-9A-Fa-f_]+|0b[01_]+|[0-9][0-9_]*(\\.[0-9_]+)?)\\b",
+          "name": "constant.numeric.kalcite"
+        }
+      ]
+    },
+    "annotations": {
+      "patterns": [
+        {
+          "match": "@[A-Za-z_][A-Za-z0-9_]*",
+          "name": "storage.modifier.annotation.kalcite"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "match": "\\b(class|struct|interface|enum|extends|implements|fn|var|const|return|if|else|while|for|in|match|spawn|destroy|signal|state|enter|update|goto|use|module|as|dyn|unsafe|rust|asm|true|false)\\b",
+          "name": "keyword.control.kalcite"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "match": "\\b(bool|u4|u8|i8|u16|i16|u32|i32|usize|isize|f32|fx8|fx16|angle8|void|Color565|Vec2i|Vec2fx|SmallList|SmallString|FixedMap|Handle)\\b",
+          "name": "storage.type.kalcite"
+        }
+      ]
+    }
+  }
+}

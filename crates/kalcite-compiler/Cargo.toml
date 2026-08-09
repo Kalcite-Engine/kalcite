@@ -1,0 +1,16 @@
+[package]
+name = "kalcite-compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+kalcite-syntax = { path = "../kalcite-syntax" }
+kalcite-object = { path = "../kalcite-object" }
+kalcite-hir = { path = "../kalcite-hir" }
+kalcite-mir = { path = "../kalcite-mir" }
+kalcite-backend-rust = { path = "../kalcite-backend-rust" }
+kalcite-backend-numworks = { path = "../kalcite-backend-numworks" }
+kalcite-backend-desktop = { path = "../kalcite-backend-desktop" }
+kalcite-stdlib = { path = "../kalcite-stdlib" }

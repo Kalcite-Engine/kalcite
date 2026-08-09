@@ -1,0 +1,29 @@
+use std.msgpack;
+use std.save;
+use std.math;
+use std.checksum;
+use std.easing;
+
+@scene
+class LibraryDemo extends Game {
+    var value: i16 = 0;
+    var loaded: u32 = 0;
+
+    fn update() -> void {
+        value = step_towards(value, 100, 3);
+        if (Input.held(Key.Ok)) {
+            Save.u32("LIB_DEMO", 42);
+            loaded = Save.load_u32("LIB_DEMO", 0);
+        }
+    }
+
+    fn draw() -> void {
+        Draw.clear(Color.Black);
+        Draw.text("KALCITE STDLIB", 12, 16, Color.Cyan, Color.Black);
+        Draw.text("EASING", 12, 48, Color.White, Color.Black);
+        Draw.number(value, 120, 48, Color.Yellow, Color.Black);
+        Draw.text("SAVE", 12, 72, Color.White, Color.Black);
+        Draw.number(loaded, 120, 72, Color.Green, Color.Black);
+        Draw.text("PRESS OK", 12, 110, Color.Gray, Color.Black);
+    }
+}

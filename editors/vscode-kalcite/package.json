@@ -1,0 +1,62 @@
+{
+  "name": "kalcite-language",
+  "displayName": "Kalcite Language",
+  "description": "Syntax highlighting, build tasks and lint integration for .klc files.",
+  "version": "0.3.0",
+  "publisher": "kalcite",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "kalcite",
+        "aliases": [
+          "Kalcite",
+          "kalcite"
+        ],
+        "extensions": [
+          ".klc"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kalcite",
+        "scopeName": "source.kalcite",
+        "path": "./syntaxes/kalcite.tmLanguage.json"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "kalcite",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": [
+              "check",
+              "lint",
+              "build",
+              "project-check",
+              "project-build"
+            ]
+          }
+        }
+      }
+    ],
+    "snippets": [
+      {
+        "language": "kalcite",
+        "path": "./snippets/kalcite.json"
+      }
+    ]
+  }
+}

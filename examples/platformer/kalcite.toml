@@ -1,0 +1,6 @@
+[project]
+name = "FriendlyPlatformer"
+entry_scene = "scenes/main.kscn"
+scripts_dir = "scripts"
+scenes_dir = "scenes"
+target = "numworks"

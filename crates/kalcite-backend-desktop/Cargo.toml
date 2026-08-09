@@ -1,0 +1,11 @@
+[package]
+name = "kalcite-backend-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+kalcite-backend-rust = { path = "../kalcite-backend-rust" }
+kalcite-mir = { path = "../kalcite-mir" }
+kalcite-stdlib = { path = "../kalcite-stdlib" }

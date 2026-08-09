@@ -1,0 +1,10 @@
+@autoload
+class Game extends Node {
+    var score: u16 = 0;
+    signal score_changed(value: u16);
+
+    fn add_score(value: u8) -> void {
+        score += value;
+        score_changed.emit(score);
+    }
+}

@@ -1,0 +1,6 @@
+[package]
+name="kalcite-platform-api"
+version = "0.2.0"
+edition = "2024"
+license = "MIT"
+[dependencies]

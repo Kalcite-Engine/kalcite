@@ -1,0 +1,10 @@
+[scene]
+root = "Main"
+
+[node "Main"]
+script = "Hud"
+
+[node "Player" parent="Main"]
+script = "Player"
+position = [20, 120]
+speed = 2.0

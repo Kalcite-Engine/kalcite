@@ -1,0 +1,10 @@
+[package]
+name="kalcite-platform-numworks"
+version = "0.2.0"
+edition = "2024"
+license = "MIT"
+[dependencies]
+kalcite-platform-api={path="../kalcite-platform-api"}
+[features]
+default=[]
+numworks-ffi=[]

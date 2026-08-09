@@ -1,0 +1,466 @@
+use std.msgpack;
+use std.save;
+
+@scene
+class HardwareProfiler extends Game {
+    @pool(8)
+    class Probe extends Entity {
+        var value: u32 = 7;
+    }
+
+    var page: u8 = 0;
+    var ran: bool = false;
+    var ok_latch: bool = false;
+    var input_can_continue: bool = false;
+
+    var passed: u32 = 0;
+    var failed: u32 = 0;
+    var skipped: u32 = 0;
+    var sleep_ok: bool = false;
+    var cpu_ok: bool = false;
+    var draw_ok: bool = false;
+    var display_ok: bool = false;
+    var random_ok: bool = false;
+    var pool_ok: bool = false;
+    var input_ok: bool = false;
+    var frame_ok: bool = false;
+    var visual_ok: bool = false;
+    var storage_supported: bool = false;
+    var storage_write_ok: bool = false;
+    var storage_read_ok: bool = false;
+    var storage_overwrite_ok: bool = false;
+    var storage_delete_ok: bool = false;
+    var storage_persist_ok: bool = false;
+    var storage_persist_pending: bool = false;
+    var storage_skipped: bool = false;
+    var msgpack_ok: bool = false;
+
+    var telemetry_supported: bool = false;
+    var battery: u32 = 0;
+    var battery_mv: u32 = 0;
+    var backlight: u32 = 0;
+    var usb: bool = false;
+    var charging: bool = false;
+
+    var sleep_ms: u32 = 0;
+    var cpu_ms: u32 = 0;
+    var cpu_value: u32 = 0;
+    var draw_ms: u32 = 0;
+    var display_pixel: u32 = 0;
+    var random_a: u32 = 0;
+    var random_b: u32 = 0;
+    var frame_start: u32 = 0;
+    var frame_count: u32 = 0;
+    var frame_ms: u32 = 0;
+    var fps: u32 = 0;
+    var storage_write_ms: u32 = 0;
+    var storage_read_ms: u32 = 0;
+    var storage_size: u32 = 0;
+    var storage_checksum: u32 = 0;
+    var storage_free: u32 = 0;
+    var storage_total: u32 = 0;
+
+    var key_up: bool = false;
+    var key_down: bool = false;
+    var key_left: bool = false;
+    var key_right: bool = false;
+    var key_ok: bool = false;
+
+    var probes: Pool[Probe; 8];
+    var probe: Handle[Probe];
+
+    fn record(ok: bool) -> void {
+        if (ok) { passed += 1; }
+        if (!ok) { failed += 1; }
+    }
+
+    fn next_pressed() -> bool {
+        if (Input.held(Key.Ok)) {
+            if (!ok_latch) {
+                ok_latch = true;
+                return true;
+            }
+        }
+        if (!Input.held(Key.Ok)) { ok_latch = false; }
+        return false;
+    }
+
+    fn next_page() -> void {
+        page += 1;
+        ran = false;
+    }
+
+    fn run_info() -> void {
+        telemetry_supported = Hardware.telemetry_supported();
+        backlight = Hardware.backlight();
+        if (telemetry_supported) {
+            battery = Hardware.battery_level();
+            battery_mv = Hardware.battery_mv();
+            usb = Hardware.usb_plugged();
+            charging = Hardware.charging();
+        }
+    }
+
+    fn run_sleep_test() -> void {
+        u32 start = System.millis();
+        System.sleep_ms(40);
+        sleep_ms = System.millis() - start;
+        sleep_ok = sleep_ms >= 30 && sleep_ms <= 120;
+        record(sleep_ok);
+    }
+
+    fn run_cpu_test() -> void {
+        u32 start = System.millis();
+        u32 i = 0;
+        u32 value = 1;
+        while (i < 60000) {
+            value = (value + i + 17) % 65521;
+            value = (value * 3 + 7) % 65521;
+            i += 1;
+        }
+        cpu_ms = System.millis() - start;
+        cpu_value = value;
+        cpu_ok = value != 0;
+        record(cpu_ok);
+    }
+
+    fn run_draw_test() -> void {
+        u32 start = System.millis();
+        i16 i = 0;
+        while (i < 1200) {
+            Draw.rect((i * 7) % 310, (i * 11) % 230, 8, 8, Color.Cyan);
+            i += 1;
+        }
+        draw_ms = System.millis() - start;
+        draw_ok = true;
+        record(draw_ok);
+    }
+
+    fn run_display_test() -> void {
+        Draw.clear(Color.Black);
+        Draw.rect(10, 10, 12, 12, Color.Green);
+        display_pixel = Draw.pixel_at(14, 14);
+        display_ok = display_pixel == 2016;
+        record(display_ok);
+    }
+
+    fn run_random_test() -> void {
+        random_a = Hardware.random();
+        random_b = Hardware.random();
+        random_ok = random_a != random_b;
+        record(random_ok);
+    }
+
+    fn run_pool_test() -> void {
+        probe = probes.spawn(Probe.new());
+        bool first_ok = probe.is_valid() && probes.contains(probe);
+        probes.despawn(probe);
+        bool second_ok = !probes.contains(probe);
+        pool_ok = first_ok && second_ok;
+        record(pool_ok);
+        probe = Handle.invalid();
+    }
+
+    fn run_storage_test() -> void {
+        storage_supported = Storage.supported();
+        if (!storage_supported) {
+            storage_skipped = true;
+            skipped += 1;
+            return;
+        }
+
+        storage_free = Storage.free_bytes();
+        storage_total = Storage.total_bytes();
+
+        if (Storage.exists("KALCITE_PERSIST")) {
+            storage_persist_ok = Storage.checksum("KALCITE_PERSIST") == 4103220923;
+            Storage.remove("KALCITE_PERSIST");
+            record(storage_persist_ok);
+        }
+        if (!storage_persist_ok && !Storage.exists("KALCITE_PERSIST")) {
+            storage_persist_pending = Storage.write_text("KALCITE_PERSIST", "KALCITE PERSISTENCE MARKER");
+            if (storage_persist_pending) { skipped += 1; }
+            if (!storage_persist_pending) { record(false); }
+        }
+
+        u32 write_start = System.millis();
+        bool wrote = Storage.write_text("KALCITE_QA", "KALCITE STORAGE TEST 12345");
+        storage_write_ms = System.millis() - write_start;
+        storage_size = Storage.size("KALCITE_QA");
+        storage_checksum = Storage.checksum("KALCITE_QA");
+        storage_write_ok = wrote && Storage.exists("KALCITE_QA") && storage_size == 26 && storage_checksum == 2651804132;
+        record(storage_write_ok);
+
+        u32 read_start = System.millis();
+        u32 check = Storage.checksum("KALCITE_QA");
+        storage_read_ms = System.millis() - read_start;
+        storage_read_ok = check == 2651804132;
+        record(storage_read_ok);
+
+        bool overwrote = Storage.write_text("KALCITE_QA", "SECOND DOCUMENT");
+        storage_overwrite_ok = overwrote && Storage.size("KALCITE_QA") == 15 && Storage.checksum("KALCITE_QA") == 381059426;
+        record(storage_overwrite_ok);
+
+        bool removed = Storage.remove("KALCITE_QA");
+        storage_delete_ok = removed && !Storage.exists("KALCITE_QA");
+        record(storage_delete_ok);
+
+        bool packed = MsgPack.write_u32("KALCITE_MP", 3735928559);
+        u32 unpacked = MsgPack.read_u32("KALCITE_MP", 0);
+        msgpack_ok = packed && unpacked == 3735928559;
+        record(msgpack_ok);
+        Storage.remove("KALCITE_MP");
+    }
+
+    fn update() -> void {
+        if (page == 0) {
+            if (next_pressed()) { next_page(); }
+        }
+
+        if (page == 1) {
+            if (!ran) { run_info(); ran = true; }
+            if (next_pressed()) { next_page(); }
+        }
+
+        if (page == 2) {
+            if (!ran) { run_sleep_test(); ran = true; }
+            if (next_pressed()) { next_page(); }
+        }
+
+        if (page == 3) {
+            if (!ran) { run_cpu_test(); ran = true; }
+            if (next_pressed()) { next_page(); }
+        }
+
+        if (page == 4) {
+            if (!ran) { run_draw_test(); ran = true; }
+            if (next_pressed()) { next_page(); }
+        }
+
+        if (page == 5) {
+            if (!ran) { run_display_test(); ran = true; }
+            if (next_pressed()) { next_page(); }
+        }
+
+        if (page == 6) {
+            if (!ran) { run_random_test(); ran = true; }
+            if (next_pressed()) { next_page(); }
+        }
+
+        if (page == 7) {
+            if (!ran) { run_pool_test(); ran = true; }
+            if (next_pressed()) { next_page(); }
+        }
+
+        if (page == 8) {
+            if (Input.held(Key.Up)) { key_up = true; }
+            if (Input.held(Key.Down)) { key_down = true; }
+            if (Input.held(Key.Left)) { key_left = true; }
+            if (Input.held(Key.Right)) { key_right = true; }
+            if (Input.held(Key.Ok)) { key_ok = true; }
+            if (key_up && key_down && key_left && key_right && key_ok) {
+                if (!ran) { input_ok = true; record(input_ok); ran = true; }
+                if (!Input.held(Key.Ok)) { ok_latch = false; input_can_continue = true; }
+            }
+            if (input_can_continue && next_pressed()) { next_page(); }
+        }
+
+        if (page == 9) {
+            if (!ran) {
+                frame_start = System.millis();
+                frame_count = 0;
+                ran = true;
+            }
+            if (frame_count < 60) { frame_count += 1; }
+            if (frame_count == 60 && frame_ms == 0) {
+                frame_ms = System.millis() - frame_start;
+                if (frame_ms > 0) { fps = 60000 / frame_ms; }
+                frame_ok = frame_ms > 0 && fps >= 20 && fps <= 240;
+                record(frame_ok);
+            }
+            if (frame_ms > 0 && next_pressed()) { next_page(); }
+        }
+
+        if (page == 10) {
+            if (Input.held(Key.Right) && !ran) { visual_ok = true; record(visual_ok); ran = true; ok_latch = false; }
+            if (Input.held(Key.Left) && !ran) { visual_ok = false; record(visual_ok); ran = true; ok_latch = false; }
+            if (ran && next_pressed()) { next_page(); }
+        }
+
+        if (page == 11) {
+            if (!ran) { run_storage_test(); ran = true; }
+            if (next_pressed()) { next_page(); }
+        }
+    }
+
+    fn draw_header() -> void {
+        Draw.rect(0, 0, 320, 24, Color.Blue);
+        Draw.text("KALCITE HARDWARE LAB", 8, 8, Color.White, Color.Blue);
+        Draw.text("TEST", 250, 8, Color.White, Color.Blue);
+        Draw.number(page, 286, 8, Color.Yellow, Color.Blue);
+    }
+
+    fn draw_footer() -> void {
+        Draw.rect(0, 222, 320, 18, Color.Gray);
+        Draw.text("OK NEXT", 8, 227, Color.White, Color.Gray);
+        Draw.text("PASS", 230, 227, Color.Green, Color.Gray);
+        Draw.number(passed, 262, 227, Color.Green, Color.Gray);
+        Draw.text("FAIL", 282, 227, Color.Red, Color.Gray);
+        Draw.number(failed, 310, 227, Color.Red, Color.Gray);
+    }
+
+    fn draw() -> void {
+        Draw.clear(Color.Black);
+        draw_header();
+
+        if (page == 0) {
+            Draw.text("FULL ENGINE AND HARDWARE", 20, 60, Color.Cyan, Color.Black);
+            Draw.text("QUALIFICATION SUITE", 20, 76, Color.Cyan, Color.Black);
+            Draw.text("ALL TEST LOGIC IS KLC", 20, 108, Color.White, Color.Black);
+            Draw.text("PRESS OK TO START", 20, 150, Color.Yellow, Color.Black);
+        }
+
+        if (page == 1) {
+            Draw.text("SYSTEM SNAPSHOT", 16, 40, Color.Cyan, Color.Black);
+            if (Hardware.is_numworks()) { Draw.text("TARGET NUMWORKS", 16, 58, Color.Green, Color.Black); }
+            if (!Hardware.is_numworks()) { Draw.text("TARGET DESKTOP", 16, 58, Color.Yellow, Color.Black); }
+            if (telemetry_supported) {
+                Draw.text("BATTERY %", 16, 84, Color.White, Color.Black); Draw.number(battery, 150, 84, Color.Yellow, Color.Black);
+                Draw.text("BATTERY MV", 16, 100, Color.White, Color.Black); Draw.number(battery_mv, 150, 100, Color.Yellow, Color.Black);
+                Draw.text("USB", 16, 132, Color.White, Color.Black);
+                if (usb) { Draw.text("YES", 150, 132, Color.Green, Color.Black); }
+                if (!usb) { Draw.text("NO", 150, 132, Color.Gray, Color.Black); }
+                Draw.text("CHARGING", 16, 148, Color.White, Color.Black);
+                if (charging) { Draw.text("YES", 150, 148, Color.Green, Color.Black); }
+                if (!charging) { Draw.text("NO", 150, 148, Color.Gray, Color.Black); }
+            }
+            if (!telemetry_supported) {
+                Draw.text("BATTERY/USB ABI", 16, 84, Color.White, Color.Black);
+                Draw.text("UNAVAILABLE", 150, 84, Color.Yellow, Color.Black);
+                Draw.text("NWLINK-SAFE FALLBACK", 16, 100, Color.Gray, Color.Black);
+            }
+            Draw.text("BACKLIGHT", 16, 116, Color.White, Color.Black); Draw.number(backlight, 150, 116, Color.Yellow, Color.Black);
+        }
+
+        if (page == 2) {
+            Draw.text("TIMING AND SLEEP", 16, 44, Color.Cyan, Color.Black);
+            Draw.text("REQUEST 40 MS", 16, 78, Color.White, Color.Black);
+            Draw.text("MEASURED", 16, 98, Color.White, Color.Black); Draw.number(sleep_ms, 150, 98, Color.Yellow, Color.Black); Draw.text("MS", 190, 98, Color.White, Color.Black);
+            if (sleep_ms >= 30 && sleep_ms <= 120) { Draw.text("PASS", 16, 136, Color.Green, Color.Black); }
+            if (sleep_ms < 30 || sleep_ms > 120) { Draw.text("FAIL", 16, 136, Color.Red, Color.Black); }
+        }
+
+        if (page == 3) {
+            Draw.text("INTEGER CPU BENCH", 16, 44, Color.Cyan, Color.Black);
+            Draw.text("60000 ITERATIONS", 16, 70, Color.White, Color.Black);
+            Draw.text("TIME MS", 16, 96, Color.White, Color.Black); Draw.number(cpu_ms, 150, 96, Color.Yellow, Color.Black);
+            Draw.text("CHECK VALUE", 16, 116, Color.White, Color.Black); Draw.number(cpu_value, 150, 116, Color.Yellow, Color.Black);
+        }
+
+        if (page == 4) {
+            Draw.text("DRAW CALL BENCH", 16, 44, Color.Cyan, Color.Black);
+            Draw.text("1200 RGB565 RECTS", 16, 72, Color.White, Color.Black);
+            Draw.text("TIME MS", 16, 98, Color.White, Color.Black); Draw.number(draw_ms, 150, 98, Color.Yellow, Color.Black);
+            Draw.rect(16, 138, 48, 24, Color.Red); Draw.rect(70, 138, 48, 24, Color.Green); Draw.rect(124, 138, 48, 24, Color.Blue);
+            Draw.rect(178, 138, 48, 24, Color.Yellow); Draw.rect(232, 138, 48, 24, Color.Cyan);
+        }
+
+        if (page == 5) {
+            Draw.text("DISPLAY READBACK", 16, 44, Color.Cyan, Color.Black);
+            Draw.text("EXPECTED RGB565 2016", 16, 72, Color.White, Color.Black);
+            Draw.text("READ", 16, 98, Color.White, Color.Black); Draw.number(display_pixel, 150, 98, Color.Yellow, Color.Black);
+            if (display_pixel == 2016) { Draw.text("PASS", 16, 136, Color.Green, Color.Black); }
+            if (display_pixel != 2016) { Draw.text("FAIL", 16, 136, Color.Red, Color.Black); }
+        }
+
+        if (page == 6) {
+            Draw.text("HARDWARE RNG", 16, 44, Color.Cyan, Color.Black);
+            Draw.text("SAMPLE A", 16, 76, Color.White, Color.Black); Draw.number(random_a, 120, 76, Color.Yellow, Color.Black);
+            Draw.text("SAMPLE B", 16, 96, Color.White, Color.Black); Draw.number(random_b, 120, 96, Color.Yellow, Color.Black);
+            if (random_a != random_b) { Draw.text("PASS", 16, 136, Color.Green, Color.Black); }
+            if (random_a == random_b) { Draw.text("FAIL", 16, 136, Color.Red, Color.Black); }
+        }
+
+        if (page == 7) {
+            Draw.text("STATIC POOL HANDLE", 16, 44, Color.Cyan, Color.Black);
+            Draw.text("SPAWN CONTAINS DESPAWN", 16, 76, Color.White, Color.Black);
+            Draw.text("GENERATION INVALIDATION", 16, 96, Color.White, Color.Black);
+            if (pool_ok) { Draw.text("PASS", 16, 136, Color.Green, Color.Black); }
+            if (!pool_ok) { Draw.text("FAIL", 16, 136, Color.Red, Color.Black); }
+        }
+
+        if (page == 8) {
+            Draw.text("INPUT MATRIX SMOKE TEST", 16, 40, Color.Cyan, Color.Black);
+            Draw.text("PRESS EACH KEY", 16, 58, Color.White, Color.Black);
+            Draw.text("UP", 30, 90, Color.White, Color.Black); if (key_up) { Draw.rect(90, 90, 16, 8, Color.Green); }
+            Draw.text("DOWN", 30, 108, Color.White, Color.Black); if (key_down) { Draw.rect(90, 108, 16, 8, Color.Green); }
+            Draw.text("LEFT", 30, 126, Color.White, Color.Black); if (key_left) { Draw.rect(90, 126, 16, 8, Color.Green); }
+            Draw.text("RIGHT", 30, 144, Color.White, Color.Black); if (key_right) { Draw.rect(90, 144, 16, 8, Color.Green); }
+            Draw.text("OK", 30, 162, Color.White, Color.Black); if (key_ok) { Draw.rect(90, 162, 16, 8, Color.Green); }
+            Draw.text("HOME BACK ARE OS OWNED", 130, 126, Color.Gray, Color.Black);
+            if (ran) { Draw.text("RELEASE OK THEN OK NEXT", 16, 196, Color.Green, Color.Black); }
+        }
+
+        if (page == 9) {
+            Draw.text("FRAME PACING", 16, 44, Color.Cyan, Color.Black);
+            Draw.text("60 FRAMES", 16, 72, Color.White, Color.Black);
+            Draw.text("ELAPSED MS", 16, 94, Color.White, Color.Black); Draw.number(frame_ms, 150, 94, Color.Yellow, Color.Black);
+            Draw.text("MEASURED FPS", 16, 116, Color.White, Color.Black); Draw.number(fps, 150, 116, Color.Yellow, Color.Black);
+            Draw.text("FRAMES", 16, 150, Color.White, Color.Black); Draw.number(frame_count, 150, 150, Color.Yellow, Color.Black);
+        }
+
+        if (page == 10) {
+            Draw.text("VISUAL QUALIFICATION", 16, 40, Color.Cyan, Color.Black);
+            Draw.text("CHECK TEXT AND COLORS", 16, 62, Color.White, Color.Black);
+            Draw.rect(16, 92, 52, 30, Color.Red); Draw.rect(72, 92, 52, 30, Color.Green); Draw.rect(128, 92, 52, 30, Color.Blue);
+            Draw.rect(184, 92, 52, 30, Color.Yellow); Draw.rect(240, 92, 52, 30, Color.Cyan);
+            Draw.text("ABC 0123456789", 16, 142, Color.White, Color.Black);
+            Draw.text("LEFT FAIL   RIGHT PASS", 16, 178, Color.Yellow, Color.Black);
+            if (ran) { Draw.text("RECORDED - PRESS OK", 16, 198, Color.Green, Color.Black); }
+        }
+
+        if (page == 11) {
+            Draw.text("DOCUMENT STORAGE", 16, 38, Color.Cyan, Color.Black);
+            if (!storage_supported) {
+                Draw.text("STORAGE BACKEND UNAVAILABLE", 16, 66, Color.Yellow, Color.Black);
+                Draw.text("EADK HAS NO FILESYSTEM API", 16, 86, Color.Gray, Color.Black);
+                Draw.text("TEST SKIPPED SAFELY", 16, 118, Color.Yellow, Color.Black);
+            }
+            if (storage_supported) {
+                Draw.text("WRITE READ OVERWRITE DELETE", 16, 58, Color.White, Color.Black);
+                Draw.text("SIZE", 16, 78, Color.White, Color.Black); Draw.number(storage_size, 86, 78, Color.Yellow, Color.Black);
+                Draw.text("CHECKSUM", 16, 94, Color.White, Color.Black); Draw.number(storage_checksum, 110, 94, Color.Yellow, Color.Black);
+                Draw.text("WRITE MS", 16, 110, Color.White, Color.Black); Draw.number(storage_write_ms, 110, 110, Color.Yellow, Color.Black);
+                Draw.text("READ MS", 16, 126, Color.White, Color.Black); Draw.number(storage_read_ms, 110, 126, Color.Yellow, Color.Black);
+                Draw.text("FREE", 16, 142, Color.White, Color.Black); Draw.number(storage_free, 86, 142, Color.Yellow, Color.Black);
+                Draw.text("TOTAL", 170, 142, Color.White, Color.Black); Draw.number(storage_total, 238, 142, Color.Yellow, Color.Black);
+                if (storage_write_ok && storage_read_ok && storage_overwrite_ok && storage_delete_ok) { Draw.text("RW CYCLE PASS", 16, 166, Color.Green, Color.Black); }
+                if (!storage_write_ok || !storage_read_ok || !storage_overwrite_ok || !storage_delete_ok) { Draw.text("RW CYCLE FAIL", 16, 166, Color.Red, Color.Black); }
+                if (msgpack_ok) { Draw.text("MSGPACK PASS", 190, 166, Color.Green, Color.Black); }
+                if (!msgpack_ok) { Draw.text("MSGPACK FAIL", 190, 166, Color.Red, Color.Black); }
+                if (storage_persist_ok) { Draw.text("RESTART PERSISTENCE PASS", 16, 190, Color.Green, Color.Black); }
+                if (storage_persist_pending) { Draw.text("REOPEN APP TO TEST PERSIST", 16, 190, Color.Yellow, Color.Black); }
+            }
+        }
+
+        if (page >= 12) {
+            Draw.text("FINAL HARDWARE REPORT", 16, 36, Color.Cyan, Color.Black);
+            Draw.text("PASS", 16, 62, Color.White, Color.Black); Draw.number(passed, 100, 62, Color.Green, Color.Black);
+            Draw.text("FAIL", 16, 80, Color.White, Color.Black); Draw.number(failed, 100, 80, Color.Red, Color.Black);
+            Draw.text("SKIP", 150, 80, Color.White, Color.Black); Draw.number(skipped, 220, 80, Color.Yellow, Color.Black);
+            Draw.text("CPU MS", 16, 106, Color.White, Color.Black); Draw.number(cpu_ms, 100, 106, Color.Yellow, Color.Black);
+            Draw.text("DRAW MS", 16, 124, Color.White, Color.Black); Draw.number(draw_ms, 100, 124, Color.Yellow, Color.Black);
+            Draw.text("FPS", 16, 142, Color.White, Color.Black); Draw.number(fps, 100, 142, Color.Yellow, Color.Black);
+            Draw.text("BATTERY", 16, 160, Color.White, Color.Black); Draw.number(battery, 100, 160, Color.Yellow, Color.Black); Draw.text("%", 130, 160, Color.White, Color.Black);
+            Draw.text("STORAGE", 170, 160, Color.White, Color.Black);
+            if (storage_supported) { Draw.text("YES", 250, 160, Color.Green, Color.Black); }
+            if (!storage_supported) { Draw.text("NO", 250, 160, Color.Yellow, Color.Black); }
+            if (failed == 0) { Draw.text("STATUS ALL RUN TESTS PASSED", 16, 192, Color.Green, Color.Black); }
+            if (failed > 0) { Draw.text("STATUS CHECK FAILURES", 16, 192, Color.Red, Color.Black); }
+            if (Hardware.is_numworks()) { Draw.text("BACK HOME TO EXIT", 176, 206, Color.Gray, Color.Black); }
+            if (!Hardware.is_numworks()) { Draw.text("Q TO EXIT", 238, 206, Color.Gray, Color.Black); }
+        }
+
+        if (page < 12) { draw_footer(); }
+    }
+}

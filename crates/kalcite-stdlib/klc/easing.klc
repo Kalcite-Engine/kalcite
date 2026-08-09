@@ -1,0 +1,14 @@
+// Standard library implemented in KLC. Imported with: use std.easing;
+fn step_towards(value: i16, target: i16, step: i16) -> i16 {
+    if (value < target) {
+        i16 next = value + step;
+        if (next > target) { return target; }
+        return next;
+    }
+    if (value > target) {
+        i16 next = value - step;
+        if (next < target) { return target; }
+        return next;
+    }
+    return value;
+}

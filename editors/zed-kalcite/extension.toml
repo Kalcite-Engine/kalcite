@@ -1,0 +1,11 @@
+id = "kalcite"
+name = "Kalcite"
+version = "0.2.0"
+schema_version = 1
+authors = ["Kalcite contributors"]
+description = "Kalcite language support for .klc files"
+repository = "https://github.com/kalcite-lang/zed-kalcite"
+
+[grammars.kalcite]
+repository = "https://github.com/kalcite-lang/tree-sitter-kalcite"
+rev = "REPLACE_WITH_PUBLISHED_COMMIT"

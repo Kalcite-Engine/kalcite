@@ -1,0 +1,13 @@
+@component
+class Hud extends Node {
+    @export
+    var player: Player;
+
+    fn ready() -> void {
+        player.coin_collected.connect(on_coin_collected);
+    }
+
+    fn on_coin_collected(value: u8) -> void {
+        Game.add_score(value);
+    }
+}

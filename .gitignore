@@ -1,0 +1,7 @@
+/target
+*.klc.rs
+*.kco
+.DS_Store
+node_modules/
+editors/tree-sitter-kalcite/src/parser.c
+editors/tree-sitter-kalcite/src/grammar.json
