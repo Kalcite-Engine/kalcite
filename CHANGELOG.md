@@ -1,3 +1,7 @@
+# 0.12.2
+
+- Fix `kalcite-scene` static signal graph type inference on recent Rust.
+
 # 0.12.1
 
 - Wired scene checking, PNG asset compilation, package lock generation and KLC tests into the CLI.
