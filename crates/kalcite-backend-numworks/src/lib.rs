@@ -1,5 +1,5 @@
-use std::{fs, path::Path};
 use kalcite_mir::Program;
+use std::{fs, path::Path};
 
 #[derive(Debug)]
 pub enum Error {
@@ -10,7 +10,9 @@ pub enum Error {
 }
 
 impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self { Self::Io(value) }
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
 }
 
 impl core::fmt::Display for Error {
@@ -50,20 +52,32 @@ pub fn emit_project(program: &Program, app_name: &str, root: &Path) -> Result<()
         root.join("src/game.rs"),
         format!("use crate::numworks::NumWorks;\n{game}"),
     )?;
-    fs::write(root.join("src/icon.png"), include_bytes!("numworks_icon.png"))?;
+    fs::write(
+        root.join("src/icon.png"),
+        include_bytes!("numworks_icon.png"),
+    )?;
 
     let mut name = vec![0u8; app_name.len() + 1];
     name[..app_name.len()].copy_from_slice(app_name.as_bytes());
     let name_len = name.len();
     let name_bytes = name.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
 
-    let has_update = scene.functions.iter().any(|function| function.name == "update");
-    let has_draw = scene.functions.iter().any(|function| function.name == "draw");
+    let has_update = scene
+        .functions
+        .iter()
+        .any(|function| function.name == "update");
+    let has_draw = scene
+        .functions
+        .iter()
+        .any(|function| function.name == "draw");
     let main = MAIN
         .replace("__SCENE__", &scene.name)
         .replace("__NAME_LEN__", &name_len.to_string())
         .replace("__NAME_BYTES__", &name_bytes)
-        .replace("__UPDATE_CALL__", if has_update { "game.update();" } else { "" })
+        .replace(
+            "__UPDATE_CALL__",
+            if has_update { "game.update();" } else { "" },
+        )
         .replace("__DRAW_CALL__", if has_draw { "game.draw();" } else { "" });
     fs::write(root.join("src/main.rs"), main)?;
     Ok(())
@@ -582,7 +596,6 @@ pub fn frame_end() {
 }
 "#;
 
-
 // Platform-specific escape hatch. Manual SVCs are intentionally kept out of
 // the portable System API because their indexes are not stable EADK ABI.
 // Nwagyu documents SVC 44 as POWER_SUSPEND, but also warns that manual SVC
@@ -647,7 +660,6 @@ fn panic(_panic: &PanicInfo<'_>) -> ! {
 }
 "#;
 
-
 #[cfg(test)]
 mod abi_regression_tests {
     use super::*;
@@ -669,7 +681,10 @@ mod abi_regression_tests {
             "eadk_usb_is_plugged",
             "eadk_battery_is_charging",
         ] {
-            assert!(!EADK.contains(symbol), "unsupported external-app ABI symbol leaked: {symbol}");
+            assert!(
+                !EADK.contains(symbol),
+                "unsupported external-app ABI symbol leaked: {symbol}"
+            );
         }
         assert!(EADK.contains("telemetry_supported()->bool{false}"));
     }
@@ -687,7 +702,10 @@ mod abi_regression_tests {
     #[test]
     fn numworks_presents_after_vblank_at_30fps_cadence() {
         assert!(PLATFORM.contains("const TARGET_FRAME_MS:u32=33"));
-        let frame_end = PLATFORM.split("pub fn frame_end() {").nth(1).expect("frame_end");
+        let frame_end = PLATFORM
+            .split("pub fn frame_end() {")
+            .nth(1)
+            .expect("frame_end");
         let wait = frame_end.find("wait_for_vblank").expect("vblank wait");
         let present = frame_end.find("Draw::present()").expect("present");
         assert!(wait < present, "LCD writes must start after VBlank");
@@ -703,5 +721,4 @@ mod abi_regression_tests {
         assert!(PLATFORM.contains("SMALL_FONT_W"));
         assert!(MAIN.contains("platform::frame_begin();"));
     }
-
 }

@@ -17,26 +17,40 @@ unsafe extern "C" {
 }
 
 impl Platform for NumWorks {
-    fn width(&self) -> u16 { 320 }
-    fn height(&self) -> u16 { 240 }
+    fn width(&self) -> u16 {
+        320
+    }
+    fn height(&self) -> u16 {
+        240
+    }
 
     fn ticks_ms(&self) -> u32 {
         #[cfg(feature = "numworks-ffi")]
-        unsafe { return kalcite_nw_ticks_ms(); }
+        unsafe {
+            return kalcite_nw_ticks_ms();
+        }
         #[cfg(not(feature = "numworks-ffi"))]
-        { 0 }
+        {
+            0
+        }
     }
 
     fn buttons(&mut self) -> Buttons {
         #[cfg(feature = "numworks-ffi")]
-        unsafe { return Buttons(kalcite_nw_scan_keys()); }
+        unsafe {
+            return Buttons(kalcite_nw_scan_keys());
+        }
         #[cfg(not(feature = "numworks-ffi"))]
-        { Buttons(0) }
+        {
+            Buttons(0)
+        }
     }
 
     fn present(&mut self, pixels: &[u16]) {
         #[cfg(feature = "numworks-ffi")]
-        unsafe { kalcite_nw_present_rgb565(pixels.as_ptr(), pixels.len()); }
+        unsafe {
+            kalcite_nw_present_rgb565(pixels.as_ptr(), pixels.len());
+        }
         #[cfg(not(feature = "numworks-ffi"))]
         let _ = pixels;
     }

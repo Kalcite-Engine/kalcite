@@ -37,7 +37,9 @@ pub fn lower(hir: &hir::Program) -> Program {
     let mut scene = None;
     for class in &hir.classes {
         let index = classes.len();
-        if class.is_scene() { scene = Some(index); }
+        if class.is_scene() {
+            scene = Some(index);
+        }
         classes.push(Class {
             source_name: class.name.clone(),
             name: class.rust_name(),
@@ -46,14 +48,21 @@ pub fn lower(hir: &hir::Program) -> Program {
             pool_capacity: class.pool_capacity(),
         });
     }
-    Program { classes, functions: hir.functions.clone(), scene }
+    Program {
+        classes,
+        functions: hir.functions.clone(),
+        scene,
+    }
 }
 
 impl Program {
-    pub fn scene(&self) -> Option<&Class> { self.scene.and_then(|i| self.classes.get(i)) }
+    pub fn scene(&self) -> Option<&Class> {
+        self.scene.and_then(|i| self.classes.get(i))
+    }
 
     pub fn resolve_class_name(&self, name: &str) -> Option<&str> {
-        self.classes.iter()
+        self.classes
+            .iter()
             .find(|class| class.source_name == name || class.name == name)
             .map(|class| class.name.as_str())
     }
@@ -63,25 +72,47 @@ impl Program {
     }
 
     pub fn memory_report(&self) -> MemoryReport {
-        let scene_bytes = self.scene().map(|c| self.class_size(c, &mut Vec::new())).unwrap_or(0);
+        let scene_bytes = self
+            .scene()
+            .map(|c| self.class_size(c, &mut Vec::new()))
+            .unwrap_or(0);
         let mut pools = Vec::new();
         let mut pool_bytes = 0usize;
         for class in &self.classes {
-            let Some(capacity) = class.pool_capacity else { continue };
+            let Some(capacity) = class.pool_capacity else {
+                continue;
+            };
             let instance_bytes = self.class_size(class, &mut Vec::new());
             // Pool slots carry a generation and occupancy flag. We intentionally
             // round to a conservative 4-byte metadata cost per slot for planning.
             let total_bytes = capacity.saturating_mul(instance_bytes.saturating_add(4));
             pool_bytes = pool_bytes.saturating_add(total_bytes);
-            pools.push(PoolReport { class_name: class.name.clone(), capacity, instance_bytes, total_bytes });
+            pools.push(PoolReport {
+                class_name: class.name.clone(),
+                capacity,
+                instance_bytes,
+                total_bytes,
+            });
         }
-        MemoryReport { scene_bytes, pool_bytes, total_static_bytes: scene_bytes.saturating_add(pool_bytes), pools }
+        MemoryReport {
+            scene_bytes,
+            pool_bytes,
+            total_static_bytes: scene_bytes.saturating_add(pool_bytes),
+            pools,
+        }
     }
 
     fn class_size(&self, class: &Class, visiting: &mut Vec<String>) -> usize {
-        if visiting.iter().any(|name| name == &class.name) { return 4; }
+        if visiting.iter().any(|name| name == &class.name) {
+            return 4;
+        }
         visiting.push(class.name.clone());
-        let size = class.fields.iter().filter(|f| f.mutable).map(|f| self.type_size(&f.ty, visiting)).sum();
+        let size = class
+            .fields
+            .iter()
+            .filter(|f| f.mutable)
+            .map(|f| self.type_size(&f.ty, visiting))
+            .sum();
         visiting.pop();
         size
     }
@@ -94,8 +125,13 @@ impl Program {
             hir::Type::U32 | hir::Type::I32 | hir::Type::Vec2fx => 4,
             hir::Type::FixedArray(inner, n) => self.type_size(inner, visiting).saturating_mul(*n),
             hir::Type::Handle(_) => 4,
-            hir::Type::Pool(inner, n) => self.type_size(inner, visiting).saturating_add(4).saturating_mul(*n),
-            hir::Type::Named(name) => self.classes.iter()
+            hir::Type::Pool(inner, n) => self
+                .type_size(inner, visiting)
+                .saturating_add(4)
+                .saturating_mul(*n),
+            hir::Type::Named(name) => self
+                .classes
+                .iter()
                 .find(|c| c.source_name == *name || c.name == *name)
                 .map(|c| self.class_size(c, visiting))
                 .unwrap_or(4),
@@ -106,21 +142,42 @@ impl Program {
 pub fn dump(program: &Program) -> String {
     let mut out = String::new();
     for (i, class) in program.classes.iter().enumerate() {
-        let scene = if program.scene == Some(i) { " @scene" } else { "" };
+        let scene = if program.scene == Some(i) {
+            " @scene"
+        } else {
+            ""
+        };
         out.push_str(&format!("class {}{}", class.name, scene));
-        if let Some(n) = class.pool_capacity { out.push_str(&format!(" @pool({n})")); }
+        if let Some(n) = class.pool_capacity {
+            out.push_str(&format!(" @pool({n})"));
+        }
         out.push('\n');
         for field in &class.fields {
-            out.push_str(&format!("  field {}: {:?}{}\n", field.name, field.ty, if field.mutable { "" } else { " const" }));
+            out.push_str(&format!(
+                "  field {}: {:?}{}\n",
+                field.name,
+                field.ty,
+                if field.mutable { "" } else { " const" }
+            ));
         }
         for function in &class.functions {
-            out.push_str(&format!("  fn {} ({} stmts)\n", function.name, function.body.len()));
+            out.push_str(&format!(
+                "  fn {} ({} stmts)\n",
+                function.name,
+                function.body.len()
+            ));
         }
     }
     let memory = program.memory_report();
-    out.push_str(&format!("memory: scene~{} B pools~{} B total-static~{} B\n", memory.scene_bytes, memory.pool_bytes, memory.total_static_bytes));
+    out.push_str(&format!(
+        "memory: scene~{} B pools~{} B total-static~{} B\n",
+        memory.scene_bytes, memory.pool_bytes, memory.total_static_bytes
+    ));
     for pool in memory.pools {
-        out.push_str(&format!("  pool {}: {} x ~{} B = ~{} B\n", pool.class_name, pool.capacity, pool.instance_bytes, pool.total_bytes));
+        out.push_str(&format!(
+            "  pool {}: {} x ~{} B = ~{} B\n",
+            pool.class_name, pool.capacity, pool.instance_bytes, pool.total_bytes
+        ));
     }
     out
 }
@@ -130,7 +187,9 @@ mod tests {
     use super::*;
     #[test]
     fn reports_static_pool_memory() {
-        let ast = kalcite_syntax::parse("@scene class G { @pool(8) class B { var x:i16; } var b:B; }").unwrap();
+        let ast =
+            kalcite_syntax::parse("@scene class G { @pool(8) class B { var x:i16; } var b:B; }")
+                .unwrap();
         let hir = kalcite_hir::lower(&ast).unwrap();
         let mir = lower(&hir);
         let memory = mir.memory_report();

@@ -1,1 +1,12 @@
-use std::{fs,path::Path};pub fn discover(p:&Path)->Result<Vec<String>,String>{let mut o=Vec::new();for e in fs::read_dir(p).map_err(|e|e.to_string())?{let p=e.map_err(|e|e.to_string())?.path();if p.extension().and_then(|x|x.to_str())==Some("klc"){o.push(p.to_string_lossy().into())}}o.sort();Ok(o)}
+use std::{fs, path::Path};
+pub fn discover(p: &Path) -> Result<Vec<String>, String> {
+    let mut o = Vec::new();
+    for e in fs::read_dir(p).map_err(|e| e.to_string())? {
+        let p = e.map_err(|e| e.to_string())?.path();
+        if p.extension().and_then(|x| x.to_str()) == Some("klc") {
+            o.push(p.to_string_lossy().into())
+        }
+    }
+    o.sort();
+    Ok(o)
+}

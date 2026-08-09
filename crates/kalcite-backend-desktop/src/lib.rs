@@ -8,7 +8,9 @@ pub enum Error {
     Rust(kalcite_backend_rust::EmitError),
 }
 impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self { Self::Io(value) }
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
 }
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -36,12 +38,21 @@ pub fn emit_project(program: &Program, app_name: &str, root: &Path) -> Result<()
         root.join("src/game.rs"),
         kalcite_backend_rust::emit_game(program).map_err(Error::Rust)?,
     )?;
-    let has_update = scene.functions.iter().any(|function| function.name == "update");
-    let has_draw = scene.functions.iter().any(|function| function.name == "draw");
+    let has_update = scene
+        .functions
+        .iter()
+        .any(|function| function.name == "update");
+    let has_draw = scene
+        .functions
+        .iter()
+        .any(|function| function.name == "draw");
     let main = MAIN
         .replace("__SCENE__", &scene.name)
         .replace("__APP_NAME__", &escape_rust_string(app_name))
-        .replace("__UPDATE_CALL__", if has_update { "game.update();" } else { "" })
+        .replace(
+            "__UPDATE_CALL__",
+            if has_update { "game.update();" } else { "" },
+        )
         .replace("__DRAW_CALL__", if has_draw { "game.draw();" } else { "" });
     fs::write(root.join("src/main.rs"), main)?;
     Ok(())
@@ -52,7 +63,8 @@ fn escape_rust_string(value: &str) -> String {
 }
 
 fn cargo_manifest(name: &str) -> String {
-    format!(r#"[package]
+    format!(
+        r#"[package]
 name = "kalcite-game-desktop"
 version = "0.1.0"
 edition = "2021"
@@ -68,7 +80,8 @@ codegen-units = 1
 strip = "symbols"
 
 [workspace]
-"#)
+"#
+    )
 }
 
 const RUNTIME: &str = include_str!("../../kalcite-runtime-core/src/pool.rs");
@@ -458,7 +471,6 @@ fn main() {
     if opts.headless { run_headless(&opts); } else { run_window(&opts); }
 }
 "#;
-
 
 #[cfg(test)]
 mod generated_module_regression_tests {

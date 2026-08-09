@@ -43,9 +43,16 @@ pub const fn checksum(bytes: &[u8]) -> u32 {
     hash
 }
 
-pub fn encode(target: Target, flags: u8, payload: &[u8], output: &mut [u8]) -> Result<usize, ObjectError> {
+pub fn encode(
+    target: Target,
+    flags: u8,
+    payload: &[u8],
+    output: &mut [u8],
+) -> Result<usize, ObjectError> {
     let total = HEADER_SIZE + payload.len();
-    if output.len() < total { return Err(ObjectError::BufferTooSmall); }
+    if output.len() < total {
+        return Err(ObjectError::BufferTooSmall);
+    }
     output[..4].copy_from_slice(&MAGIC);
     output[4..6].copy_from_slice(&FORMAT_VERSION.to_le_bytes());
     output[6] = target as u8;
@@ -57,21 +64,45 @@ pub fn encode(target: Target, flags: u8, payload: &[u8], output: &mut [u8]) -> R
 }
 
 pub fn decode(input: &[u8]) -> Result<(Header, &[u8]), ObjectError> {
-    if input.len() < HEADER_SIZE { return Err(ObjectError::Truncated); }
-    if input[..4] != MAGIC { return Err(ObjectError::BadMagic); }
+    if input.len() < HEADER_SIZE {
+        return Err(ObjectError::Truncated);
+    }
+    if input[..4] != MAGIC {
+        return Err(ObjectError::BadMagic);
+    }
     let version = u16::from_le_bytes([input[4], input[5]]);
-    if version != FORMAT_VERSION { return Err(ObjectError::UnsupportedVersion); }
+    if version != FORMAT_VERSION {
+        return Err(ObjectError::UnsupportedVersion);
+    }
     let target = match input[6] {
-        0 => Target::Portable, 1 => Target::NumWorks, 2 => Target::Desktop, 3 => Target::Web,
+        0 => Target::Portable,
+        1 => Target::NumWorks,
+        2 => Target::Desktop,
+        3 => Target::Web,
         _ => return Err(ObjectError::UnknownTarget),
     };
     let payload_len = u32::from_le_bytes([input[8], input[9], input[10], input[11]]);
     let expected = u32::from_le_bytes([input[12], input[13], input[14], input[15]]);
-    let end = HEADER_SIZE.checked_add(payload_len as usize).ok_or(ObjectError::Truncated)?;
-    if input.len() < end { return Err(ObjectError::Truncated); }
+    let end = HEADER_SIZE
+        .checked_add(payload_len as usize)
+        .ok_or(ObjectError::Truncated)?;
+    if input.len() < end {
+        return Err(ObjectError::Truncated);
+    }
     let payload = &input[HEADER_SIZE..end];
-    if checksum(payload) != expected { return Err(ObjectError::BadChecksum); }
-    Ok((Header { version, target, flags: input[7], payload_len, checksum: expected }, payload))
+    if checksum(payload) != expected {
+        return Err(ObjectError::BadChecksum);
+    }
+    Ok((
+        Header {
+            version,
+            target,
+            flags: input[7],
+            payload_len,
+            checksum: expected,
+        },
+        payload,
+    ))
 }
 
 #[cfg(test)]
