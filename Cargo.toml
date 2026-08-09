@@ -20,6 +20,7 @@ members = [
   "crates/kalcite-platform-headless",
   "crates/kalcite-platform-numworks",
   "crates/kalcite-scene",
+  "crates/kalcite-lsp",
   "crates/kalcite-assets",
   "crates/kalcite-renderer",
   "crates/kalcite-physics2d",

@@ -4,7 +4,7 @@ use kalcite_object::Target;
 use kalcite_project::{discover, find_root, init_project, load_manifest, validate};
 
 fn usage() {
-    eprintln!("usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|web]\n  kalcite build-app FILE.klc --target numworks [-o GAME.nwa] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|web]");
+    eprintln!("usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|web]\n  kalcite build-app FILE.klc --target numworks [-o GAME.nwa] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|web]");
 }
 
 fn main() -> ExitCode {
@@ -18,6 +18,10 @@ fn main() -> ExitCode {
         "build-app" => build_app_command(&args[2..]),
         "doctor" => doctor_command(&args[2..]),
         "libs" => libs_command(),
+        "scene-check" => scene_check_command(&args[2..]),
+        "asset-png" => asset_png_command(&args[2..]),
+        "package-lock" => package_lock_command(&args[2..]),
+        "test" => test_command(&args[2..]),
         "run" => run_command(&args[2..]),
         _ => file_command(command, &args[2..]),
     }
@@ -166,6 +170,36 @@ fn build_nwa_command(args: &[String]) -> ExitCode {
         }
     }
     ExitCode::SUCCESS
+}
+
+fn scene_check_command(args: &[String]) -> ExitCode {
+    let Some(path) = args.first() else { eprintln!("usage: kalcite scene-check FILE.kscn"); return ExitCode::FAILURE; };
+    match kalcite_scene::load(Path::new(path)) {
+        Ok(scene) => { println!("ok: scene `{}`: {} nodes, {} static signals", scene.name, scene.nodes.len(), scene.signals.len()); ExitCode::SUCCESS }
+        Err(e) => { eprintln!("{path}: {e}"); ExitCode::FAILURE }
+    }
+}
+
+fn asset_png_command(args: &[String]) -> ExitCode {
+    let Some(path) = args.first() else { eprintln!("usage: kalcite asset-png FILE.png [-o FILE.ksp]"); return ExitCode::FAILURE; };
+    let mut output = PathBuf::from(path).with_extension("ksp");
+    let mut i=1; while i<args.len(){ match args[i].as_str(){ "-o" if i+1<args.len()=>{output=PathBuf::from(&args[i+1]);i+=2}, x=>{eprintln!("unknown option `{x}`");return ExitCode::FAILURE;} } }
+    let sprite=match kalcite_assets::png(Path::new(path)){Ok(v)=>v,Err(e)=>{eprintln!("{path}: {e}");return ExitCode::FAILURE;}};
+    let mut bytes=Vec::with_capacity(12+sprite.rle.len()); bytes.extend_from_slice(b"KSP1"); bytes.extend_from_slice(&sprite.w.to_le_bytes()); bytes.extend_from_slice(&sprite.h.to_le_bytes()); bytes.extend_from_slice(&(sprite.rle.len() as u32).to_le_bytes()); bytes.extend_from_slice(&sprite.rle);
+    if let Err(e)=fs::write(&output,bytes){eprintln!("{}: {e}",output.display());return ExitCode::FAILURE;} println!("compiled {}x{} RGB565/RLE sprite -> {}",sprite.w,sprite.h,output.display()); ExitCode::SUCCESS
+}
+
+fn package_lock_command(args: &[String]) -> ExitCode {
+    let root=args.first().map(PathBuf::from).unwrap_or_else(||PathBuf::from(".")); let path=root.join("kalcite.lock");
+    let lock=match kalcite_package::load(&path){Ok(v)=>v,Err(e)=>{eprintln!("{}: {e}",path.display());return ExitCode::FAILURE;}};
+    if let Err(e)=kalcite_package::save(&path,&lock){eprintln!("{}: {e}",path.display());return ExitCode::FAILURE;} println!("locked {} packages in {}",lock.packages.len(),path.display()); ExitCode::SUCCESS
+}
+
+fn test_command(args: &[String]) -> ExitCode {
+    let dir=args.first().map(PathBuf::from).unwrap_or_else(||PathBuf::from("tests/klc"));
+    let cases=match kalcite_test_runner::discover(&dir){Ok(v)=>v,Err(e)=>{eprintln!("{}: {e}",dir.display());return ExitCode::FAILURE;}}; let mut failed=0;
+    for case in &cases { let src=match fs::read_to_string(case){Ok(v)=>v,Err(e)=>{eprintln!("FAIL {case}: {e}");failed+=1;continue}}; match kalcite_compiler::check(&src){Ok(_)=>println!("PASS {case}"),Err(e)=>{eprintln!("FAIL {case}: {e}");failed+=1}} }
+    println!("{} tests, {} failed",cases.len(),failed); if failed==0{ExitCode::SUCCESS}else{ExitCode::FAILURE}
 }
 
 fn libs_command() -> ExitCode {

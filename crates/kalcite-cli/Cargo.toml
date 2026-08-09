@@ -1,6 +1,6 @@
 [package]
 name = "kalcite-cli"
-version = "0.11.0"
+version.workspace = true
 edition = "2024"
 license = "MIT"
 
@@ -14,3 +14,7 @@ kalcite-linter = { path = "../kalcite-linter" }
 kalcite-project = { path = "../kalcite-project" }
 kalcite-object = { path = "../kalcite-object" }
 kalcite-stdlib = { path = "../kalcite-stdlib" }
+kalcite-scene = { path = "../kalcite-scene" }
+kalcite-assets = { path = "../kalcite-assets" }
+kalcite-package = { path = "../kalcite-package" }
+kalcite-test-runner = { path = "../kalcite-test-runner" }

@@ -1,3 +1,8 @@
+# 0.12.1
+
+- Wired scene checking, PNG asset compilation, package lock generation and KLC tests into the CLI.
+- Added a stdio LSP server using the real compiler for diagnostics.
+
 # 0.12.0
 
 - Implement engine roadmap foundations across scenes, assets, rendering, physics, input, audio, saves, checking, tests, profiling, packages and MIR optimization.

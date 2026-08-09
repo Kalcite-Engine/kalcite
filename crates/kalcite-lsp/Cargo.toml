@@ -1,0 +1,9 @@
+[package]
+name="kalcite-lsp"
+version.workspace=true
+edition.workspace=true
+license.workspace=true
+[dependencies]
+tower-lsp="0.20"
+tokio={version="1",features=["rt-multi-thread","io-std","macros"]}
+kalcite-compiler={path="../kalcite-compiler"}
