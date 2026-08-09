@@ -31,7 +31,7 @@ impl core::fmt::Display for Error {
 /// writer exists here. Cargo produces the relocatable ARM ELF consumed by
 /// `nwlink install-nwa` and by the NumWorks third-party app uploader.
 pub fn emit_project(program: &Program, app_name: &str, root: &Path) -> Result<(), Error> {
-    emit_project_with_resources(program, app_name, root, None, None, None)
+    emit_project_with_resources(program, app_name, root, None, None, None, None, None)
 }
 
 pub fn emit_project_with_resources(
@@ -41,6 +41,8 @@ pub fn emit_project_with_resources(
     scene_data: Option<&[u8]>,
     assets: Option<&[u8]>,
     scene_runtime: Option<&str>,
+    input_runtime: Option<&str>,
+    save_runtime: Option<&str>,
 ) -> Result<(), Error> {
     let scene = program.scene().ok_or(Error::NoScene)?;
     if app_name.is_empty() || app_name.len() > 9 || !app_name.is_ascii() {
@@ -58,7 +60,7 @@ pub fn emit_project_with_resources(
     fs::write(root.join("src/numworks.rs"), NUMWORKS_ADVANCED)?;
     fs::write(root.join("src/runtime.rs"), RUNTIME)?;
     fs::write(root.join("src/stdlib.rs"), kalcite_stdlib::RUST_SOURCE)?;
-    write_project_data(root, scene_data, assets)?;
+    write_project_data(root, scene_data, assets, input_runtime, save_runtime)?;
     fs::write(
         root.join("src/scene_runtime.rs"),
         scene_runtime
@@ -112,6 +114,8 @@ fn write_project_data(
     root: &Path,
     scene: Option<&[u8]>,
     assets: Option<&[u8]>,
+    input_runtime: Option<&str>,
+    save_runtime: Option<&str>,
 ) -> Result<(), std::io::Error> {
     let scene = scene.unwrap_or_default();
     let assets = assets.unwrap_or_default();
@@ -123,7 +127,12 @@ fn write_project_data(
             "#[used]\npub static ENTRY_SCENE: [u8; {}] = *include_bytes!(\"entry.ksc2\");\n#[used]\npub static ASSET_PACK: [u8; {}] = *include_bytes!(\"assets.kap\");\n{}",
             scene.len(),
             assets.len(),
-            ASSET_RUNTIME.trim_start_matches("#![no_std]")
+            format!(
+                "{}\n{}\n{}",
+                ASSET_RUNTIME.trim_start_matches("#![no_std]"),
+                input_runtime.unwrap_or("pub fn action_mask(_:&str)->u64{0}"),
+                save_runtime.unwrap_or("pub struct ProjectSave;")
+            )
         ),
     )
 }
@@ -334,17 +343,34 @@ impl Key {
 }
 
 static mut INPUT_STATE: u64 = 0;
+static mut PREV_INPUT_STATE: u64 = 0;
 
 pub struct Input;
 impl Input {
     #[inline]
-    pub fn begin_frame() { unsafe { INPUT_STATE = eadk::keyboard_scan(); } }
+    pub fn begin_frame() { unsafe { PREV_INPUT_STATE=INPUT_STATE;INPUT_STATE = eadk::keyboard_scan(); } }
 
     #[inline]
     pub fn held(key: Key) -> bool {
         ((unsafe { INPUT_STATE } >> key.0) & 1) != 0
     }
+    #[inline] pub fn pressed(key:Key)->bool{let b=1u64<<key.0;unsafe{INPUT_STATE&b!=0&&PREV_INPUT_STATE&b==0}}
+    #[inline] pub fn released(key:Key)->bool{let b=1u64<<key.0;unsafe{INPUT_STATE&b==0&&PREV_INPUT_STATE&b!=0}}
+    #[inline] pub fn action_held(action:&str)->bool{unsafe{INPUT_STATE&crate::project_data::action_mask(action)!=0}}
+    #[inline] pub fn action_pressed(action:&str)->bool{let m=crate::project_data::action_mask(action);unsafe{INPUT_STATE&m!=0&&PREV_INPUT_STATE&m==0}}
+    #[inline] pub fn action_released(action:&str)->bool{let m=crate::project_data::action_mask(action);unsafe{INPUT_STATE&m==0&&PREV_INPUT_STATE&m!=0}}
+    #[inline] pub fn action_axis(negative:&str,positive:&str)->i16{Self::action_held(positive) as i16-Self::action_held(negative) as i16}
 }
+
+pub struct Physics;
+impl Physics {
+    #[inline] pub fn hit(ax:i16,ay:i16,aw:i16,ah:i16,bx:i16,by:i16,bw:i16,bh:i16)->bool{ax<bx.saturating_add(bw)&&ax.saturating_add(aw)>bx&&ay<by.saturating_add(bh)&&ay.saturating_add(ah)>by}
+    #[inline] pub fn move_x(x:i16,y:i16,w:i16,h:i16,dx:i16,sx:i16,sy:i16,sw:i16,sh:i16)->i16{let next=x.saturating_add(dx);if Self::hit(next,y,w,h,sx,sy,sw,sh){x}else{next}}
+}
+
+static mut AUDIO_COMMANDS:u32=0;
+pub struct Audio;
+impl Audio { pub fn tone(_hz:u16,_ms:u16,_volume:u8){unsafe{AUDIO_COMMANDS=AUDIO_COMMANDS.saturating_add(1);}}pub fn stop(){}pub fn command_count()->u32{unsafe{AUDIO_COMMANDS}} }
 
 pub struct System;
 impl System {
@@ -808,7 +834,7 @@ mod abi_regression_tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(root.join("src")).unwrap();
-        write_project_data(&root, Some(b"KSC2scene"), Some(b"KAP0assets")).unwrap();
+        write_project_data(&root, Some(b"KSC2scene"), Some(b"KAP0assets"), None, None).unwrap();
         assert_eq!(
             std::fs::read(root.join("src/entry.ksc2")).unwrap(),
             b"KSC2scene"

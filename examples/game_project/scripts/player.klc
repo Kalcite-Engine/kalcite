@@ -2,9 +2,16 @@
 class Player extends Node2D {
     @export
     var speed: i16 = 2;
+    var x: i16 = 0;
     signal moved(value: i16);
+    signal collided();
 
     fn update() -> void {
-        moved.emit(speed);
+        var next: i16 = Physics.move_x(x, 0, 8, 8, speed, 8, 0, 8, 8);
+        if next == x {
+            collided.emit();
+        }
+        x = next;
+        moved.emit(x);
     }
 }

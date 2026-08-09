@@ -4,5 +4,11 @@ class GameState extends Node {
 
     fn ready() -> void {
         launches += 1;
+        ProjectSave.set_score("GAME_STATE", 41);
+        var restored: u32 = ProjectSave.score("GAME_STATE", 0);
+        if restored == 41 && !ProjectSave.compatible(ProjectSave.version() + 1, ProjectSave.schema()) {
+            launches += 1;
+        }
+        Audio.tone(880, 30, 64);
     }
 }

@@ -28,7 +28,7 @@ impl core::fmt::Display for Error {
 /// used by the NumWorks backend. The host runner only presents that buffer in
 /// a resizable native window using nearest-neighbour integer scaling.
 pub fn emit_project(program: &Program, app_name: &str, root: &Path) -> Result<(), Error> {
-    emit_project_with_resources(program, app_name, root, None, None, None)
+    emit_project_with_resources(program, app_name, root, None, None, None, None, None)
 }
 
 pub fn emit_project_with_resources(
@@ -38,6 +38,8 @@ pub fn emit_project_with_resources(
     scene_data: Option<&[u8]>,
     assets: Option<&[u8]>,
     scene_runtime: Option<&str>,
+    input_runtime: Option<&str>,
+    save_runtime: Option<&str>,
 ) -> Result<(), Error> {
     let scene = program.scene().ok_or(Error::NoScene)?;
     fs::create_dir_all(root.join("src"))?;
@@ -45,7 +47,7 @@ pub fn emit_project_with_resources(
     fs::write(root.join("src/platform.rs"), PLATFORM)?;
     fs::write(root.join("src/runtime.rs"), RUNTIME)?;
     fs::write(root.join("src/stdlib.rs"), kalcite_stdlib::RUST_SOURCE)?;
-    write_project_data(root, scene_data, assets)?;
+    write_project_data(root, scene_data, assets, input_runtime, save_runtime)?;
     fs::write(
         root.join("src/scene_runtime.rs"),
         scene_runtime
@@ -87,6 +89,8 @@ fn write_project_data(
     root: &Path,
     scene: Option<&[u8]>,
     assets: Option<&[u8]>,
+    input_runtime: Option<&str>,
+    save_runtime: Option<&str>,
 ) -> Result<(), std::io::Error> {
     let scene = scene.unwrap_or_default();
     let assets = assets.unwrap_or_default();
@@ -98,7 +102,12 @@ fn write_project_data(
             "#[used]\npub static ENTRY_SCENE: [u8; {}] = *include_bytes!(\"entry.ksc2\");\n#[used]\npub static ASSET_PACK: [u8; {}] = *include_bytes!(\"assets.kap\");\n{}",
             scene.len(),
             assets.len(),
-            ASSET_RUNTIME.trim_start_matches("#![no_std]")
+            format!(
+                "{}\n{}\n{}",
+                ASSET_RUNTIME.trim_start_matches("#![no_std]"),
+                input_runtime.unwrap_or("pub fn action_mask(_:&str)->u64{0}"),
+                save_runtime.unwrap_or("pub struct ProjectSave;")
+            )
         ),
     )
 }
@@ -149,10 +158,17 @@ pub const PIXELS: usize = WIDTH * HEIGHT;
 
 static FRAMEBUFFER: OnceLock<Mutex<Box<[u16; PIXELS]>>> = OnceLock::new();
 static KEYS: AtomicU64 = AtomicU64::new(0);
+static PREV_KEYS: AtomicU64 = AtomicU64::new(0);
 static START: OnceLock<Instant> = OnceLock::new();
 static RANDOM_STATE: AtomicU32 = AtomicU32::new(0x4b1d_1234);
 static CAMERA_X: AtomicI32 = AtomicI32::new(0);
 static CAMERA_Y: AtomicI32 = AtomicI32::new(0);
+static DRAW_CALLS: AtomicU32 = AtomicU32::new(0);
+static DIRTY_PIXELS: AtomicU32 = AtomicU32::new(0);
+static SPRITES: AtomicU32 = AtomicU32::new(0);
+static TILES: AtomicU32 = AtomicU32::new(0);
+static COLLISION_QUERIES: AtomicU32 = AtomicU32::new(0);
+static PHYSICS_NS: AtomicU64 = AtomicU64::new(0);
 
 fn framebuffer() -> &'static Mutex<Box<[u16; PIXELS]>> {
     FRAMEBUFFER.get_or_init(|| Mutex::new(Box::new([0; PIXELS])))
@@ -178,6 +194,7 @@ impl SubAssign for Vec2fx { fn sub_assign(&mut self,r:Self){self.x-=r.x;self.y-=
 #[allow(non_upper_case_globals)] impl Key {
     pub const Left:Self=Self(0); pub const Up:Self=Self(1); pub const Down:Self=Self(2);
     pub const Right:Self=Self(3); pub const Ok:Self=Self(4); pub const Back:Self=Self(5); pub const Home:Self=Self(6);
+    pub const Plus:Self=Self(7); pub const Minus:Self=Self(8);
 }
 
 pub struct Input;
@@ -187,7 +204,23 @@ impl Input {
         let bit = 1u64.checked_shl(key.0 as u32).unwrap_or(0);
         KEYS.load(Ordering::Relaxed) & bit != 0
     }
+    #[inline] pub fn pressed(key:Key)->bool{let b=1u64<<key.0;KEYS.load(Ordering::Relaxed)&b!=0&&PREV_KEYS.load(Ordering::Relaxed)&b==0}
+    #[inline] pub fn released(key:Key)->bool{let b=1u64<<key.0;KEYS.load(Ordering::Relaxed)&b==0&&PREV_KEYS.load(Ordering::Relaxed)&b!=0}
+    #[inline] pub fn action_held(action:&str)->bool{KEYS.load(Ordering::Relaxed)&crate::project_data::action_mask(action)!=0}
+    #[inline] pub fn action_pressed(action:&str)->bool{let m=crate::project_data::action_mask(action);KEYS.load(Ordering::Relaxed)&m!=0&&PREV_KEYS.load(Ordering::Relaxed)&m==0}
+    #[inline] pub fn action_released(action:&str)->bool{let m=crate::project_data::action_mask(action);KEYS.load(Ordering::Relaxed)&m==0&&PREV_KEYS.load(Ordering::Relaxed)&m!=0}
+    #[inline] pub fn action_axis(negative:&str,positive:&str)->i16{Self::action_held(positive) as i16-Self::action_held(negative) as i16}
 }
+
+pub struct Physics;
+impl Physics {
+    #[inline] pub fn hit(ax:i16,ay:i16,aw:i16,ah:i16,bx:i16,by:i16,bw:i16,bh:i16)->bool{COLLISION_QUERIES.fetch_add(1,Ordering::Relaxed);ax<bx.saturating_add(bw)&&ax.saturating_add(aw)>bx&&ay<by.saturating_add(bh)&&ay.saturating_add(ah)>by}
+    #[inline] pub fn move_x(x:i16,y:i16,w:i16,h:i16,dx:i16,sx:i16,sy:i16,sw:i16,sh:i16)->i16{let started=Instant::now();let next=x.saturating_add(dx);let out=if Self::hit(next,y,w,h,sx,sy,sw,sh){x}else{next};PHYSICS_NS.fetch_add(started.elapsed().as_nanos().min(u64::MAX as u128)as u64,Ordering::Relaxed);out}
+}
+
+static AUDIO_TONES: AtomicU32 = AtomicU32::new(0);
+pub struct Audio;
+impl Audio { pub fn tone(_hz:u16,_ms:u16,_volume:u8){AUDIO_TONES.fetch_add(1,Ordering::Relaxed);}pub fn stop(){}pub fn command_count()->u32{AUDIO_TONES.load(Ordering::Relaxed)} }
 
 /// Host-only hook. Backends for calculators never expose this to game code.
 pub fn host_set_key(key: Key, down: bool) {
@@ -284,12 +317,13 @@ impl Storage {
 pub struct Draw;
 impl Draw {
     pub fn camera(x:i16,y:i16){CAMERA_X.store(x as i32,Ordering::Relaxed);CAMERA_Y.store(y as i32,Ordering::Relaxed);}
-    pub fn clear(c: Color) { framebuffer().lock().unwrap().fill(c.0); }
+    pub fn clear(c: Color) { metric_draw(PIXELS as u32);framebuffer().lock().unwrap().fill(c.0); }
     pub fn rect(x:i16,y:i16,w:i16,h:i16,c:Color) {
         if w<=0 || h<=0 { return; }
         let x0=x.clamp(0,WIDTH as i16) as usize; let y0=y.clamp(0,HEIGHT as i16) as usize;
         let x1=(x+w).clamp(0,WIDTH as i16) as usize; let y1=(y+h).clamp(0,HEIGHT as i16) as usize;
         if x1<=x0 || y1<=y0 { return; }
+        metric_draw(((x1-x0)*(y1-y0)) as u32);
         let mut fb=framebuffer().lock().unwrap();
         for yy in y0..y1 { let row=yy*WIDTH; for xx in x0..x1 { fb[row+xx]=c.0; } }
     }
@@ -316,13 +350,14 @@ impl Draw {
     pub fn tilemap(map:&str,tileset:&str,tile_w:u16,tile_h:u16,x:i16,y:i16) {
         let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK)else{return;};let Some(map)=pack.get_named(map)else{return;};let Some(sprite)=pack.get_named(tileset)else{return;};
         if map.kind!=2||sprite.kind!=1||map.data.len()<4||sprite.data.len()<4||tile_w==0||tile_h==0{return;}let mw=u16::from_le_bytes([map.data[0],map.data[1]]) as usize;let mh=u16::from_le_bytes([map.data[2],map.data[3]]) as usize;let sw=u16::from_le_bytes([sprite.data[0],sprite.data[1]]);let cols=sw/tile_w;if cols==0{return;}
-        for row in 0..mh{for col in 0..mw{let at=4+(row*mw+col)*2;if at+2>map.data.len(){return;}let tile=u16::from_le_bytes([map.data[at],map.data[at+1]]);let(dx,dy)=world_to_screen(x+col as i16*tile_w as i16,y+row as i16*tile_h as i16);draw_sprite_data(sprite.data,dx,dy,(tile%cols)*tile_w,(tile/cols)*tile_h,tile_w,tile_h);}}
+        TILES.fetch_add((mw*mh).min(u32::MAX as usize)as u32,Ordering::Relaxed);for row in 0..mh{for col in 0..mw{let at=4+(row*mw+col)*2;if at+2>map.data.len(){return;}let tile=u16::from_le_bytes([map.data[at],map.data[at+1]]);let(dx,dy)=world_to_screen(x+col as i16*tile_w as i16,y+row as i16*tile_h as i16);draw_sprite_data(sprite.data,dx,dy,(tile%cols)*tile_w,(tile/cols)*tile_h,tile_w,tile_h);}}
     }
     pub fn pixel_at(x:i16,y:i16)->u32 {
         if x<0 || y<0 || x>=WIDTH as i16 || y>=HEIGHT as i16 { return 0; }
         framebuffer().lock().unwrap()[y as usize*WIDTH+x as usize] as u32
     }
     pub fn text(text:&str,x:i16,y:i16,c:Color,bg:Color) {
+        metric_draw((text.len()*35).min(u32::MAX as usize)as u32);
         let mut px=x;
         for b in text.bytes() {
             if b==b'\n' { px=x; continue; }
@@ -344,6 +379,7 @@ fn world_to_screen(x:i16,y:i16)->(i16,i16){(x.saturating_sub(CAMERA_X.load(Order
 fn draw_sprite_data(data:&[u8],x:i16,y:i16,sx:u16,sy:u16,requested_w:u16,requested_h:u16) {
     if data.len()<4{return;}let width=u16::from_le_bytes([data[0],data[1]]);let height=u16::from_le_bytes([data[2],data[3]]);
     let sw=requested_w.min(width.saturating_sub(sx));let sh=requested_h.min(height.saturating_sub(sy));if sw==0||sh==0{return;}
+    SPRITES.fetch_add(1,Ordering::Relaxed);metric_draw(sw as u32*sh as u32);
     let mut pixel=0usize;let mut at=4usize;let mut fb=framebuffer().lock().unwrap();
     while at+4<=data.len(){let count=data[at] as usize;let transparent=data[at+1]!=0;let color=u16::from_le_bytes([data[at+2],data[at+3]]);at+=4;if count==0{return;}
         let row=pixel/width as usize;let col=pixel%width as usize;pixel+=count;
@@ -398,7 +434,11 @@ pub fn host_copy_xrgb8888(dst: &mut [u32]) {
     for (out, &pixel) in dst.iter_mut().zip(fb.iter()) { *out=rgb565_to_xrgb8888(pixel); }
 }
 
-pub fn frame_end() {}
+fn metric_draw(pixels:u32){DRAW_CALLS.fetch_add(1,Ordering::Relaxed);DIRTY_PIXELS.fetch_add(pixels,Ordering::Relaxed);}
+#[derive(Clone,Copy,Default)]pub struct EngineMetrics{pub draw_calls:u32,pub dirty_pixels:u32,pub dirty_regions:u32,pub sprites:u32,pub tiles:u32,pub collision_queries:u32,pub physics_us:u32}
+pub fn metrics()->EngineMetrics{EngineMetrics{draw_calls:DRAW_CALLS.load(Ordering::Relaxed),dirty_pixels:DIRTY_PIXELS.load(Ordering::Relaxed),dirty_regions:DRAW_CALLS.load(Ordering::Relaxed),sprites:SPRITES.load(Ordering::Relaxed),tiles:TILES.load(Ordering::Relaxed),collision_queries:COLLISION_QUERIES.load(Ordering::Relaxed),physics_us:(PHYSICS_NS.load(Ordering::Relaxed)/1000).min(u32::MAX as u64)as u32}}
+pub fn frame_begin() {DRAW_CALLS.store(0,Ordering::Relaxed);DIRTY_PIXELS.store(0,Ordering::Relaxed);SPRITES.store(0,Ordering::Relaxed);TILES.store(0,Ordering::Relaxed);COLLISION_QUERIES.store(0,Ordering::Relaxed);PHYSICS_NS.store(0,Ordering::Relaxed);}
+pub fn frame_end() { PREV_KEYS.store(KEYS.load(Ordering::Relaxed),Ordering::Relaxed); }
 pub fn save_ppm(path: &str) -> io::Result<()> {
     let fb=framebuffer().lock().unwrap();
     let mut f=File::create(path)?;
@@ -484,31 +524,40 @@ fn scale_nearest(src: &[u32], dst: &mut [u32], scale: usize) {
     }
 }
 
-fn frame(game: &mut __SCENE__) {
+#[derive(Clone,Copy,Default)]
+struct FrameStats { update_us:u64, render_us:u64, engine:platform::EngineMetrics, static_ram:usize }
+
+fn frame(game: &mut __SCENE__) -> FrameStats {
+    platform::frame_begin();
+    let update_started=Instant::now();
     __UPDATE_CALL__
+    let update_us=update_started.elapsed().as_micros() as u64;
+    let render_started=Instant::now();
     __DRAW_CALL__
     platform::frame_end();
+    FrameStats{update_us,render_us:render_started.elapsed().as_micros() as u64,engine:platform::metrics(),static_ram:core::mem::size_of_val(game)}
 }
 
 
 fn open_profile(opts: &Options) -> Option<File> {
     let path=opts.profile.as_ref()?;
     match File::create(path) {
-        Ok(mut f) => { let _=writeln!(f,"frame,frame_us,fps"); Some(f) },
+        Ok(mut f) => { let _=writeln!(f,"frame,frame_us,update_us,render_us,physics_us,draw_calls,dirty_pixels,dirty_regions,sprites,tiles,collision_queries,pool_used,static_ram,fps"); Some(f) },
         Err(e) => { eprintln!("profile open failed for {path}: {e}"); None }
     }
 }
 
-fn write_profile(file: &mut Option<File>, frame_index:u64, start:Instant) {
+fn write_profile(file: &mut Option<File>, frame_index:u64, start:Instant,stats:FrameStats) {
     let us=start.elapsed().as_micros() as u64;
     let fps=if us>0 { 1_000_000.0/us as f64 } else { 0.0 };
-    if let Some(f)=file.as_mut() { let _=writeln!(f,"{frame_index},{us},{fps:.3}"); }
+    let e=stats.engine;
+    if let Some(f)=file.as_mut() { let _=writeln!(f,"{frame_index},{us},{},{},{},{},{},{},{},{},{},{},{},{fps:.3}",stats.update_us,stats.render_us,e.physics_us,e.draw_calls,e.dirty_pixels,e.dirty_regions,e.sprites,e.tiles,e.collision_queries,0,stats.static_ram); }
 }
 
 fn run_headless(opts: &Options) {
     let mut game=__SCENE__::default();
     let mut profile=open_profile(opts);
-    for i in 0..opts.frames { let started=Instant::now(); frame(&mut game); write_profile(&mut profile,i,started); }
+    for i in 0..opts.frames { let started=Instant::now(); let stats=frame(&mut game); write_profile(&mut profile,i,started,stats); }
     platform::save_ppm(&opts.screenshot).expect("failed to save screenshot");
     println!("Kalcite headless run complete: {} frames -> {}",opts.frames,opts.screenshot);
 }
@@ -535,7 +584,7 @@ fn run_window(opts: &Options) {
     while window.is_open() && !window.is_key_down(HostKey::Q) {
         let started=Instant::now();
         set_inputs(&window);
-        frame(&mut game);
+        let stats=frame(&mut game);
         platform::host_copy_xrgb8888(&mut logical);
         scale_nearest(&logical,&mut presented,opts.scale);
         window.update_with_buffer(&presented,width,height).expect("failed to present framebuffer");
@@ -548,7 +597,7 @@ fn run_window(opts: &Options) {
             }
         }
         screenshot_down=now_screenshot;
-        write_profile(&mut profile,frame_index,started);
+        write_profile(&mut profile,frame_index,started,stats);
         frame_index+=1;
 
         next_frame+=frame_time;
@@ -582,7 +631,7 @@ mod generated_module_regression_tests {
     #[test]
     fn desktop_runner_exposes_csv_profiling() {
         assert!(MAIN.contains("--profile"));
-        assert!(MAIN.contains("frame,frame_us,fps"));
+        assert!(MAIN.contains("frame,frame_us,update_us,render_us,physics_us"));
     }
 
     #[test]
@@ -596,7 +645,7 @@ mod generated_module_regression_tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(root.join("src")).unwrap();
-        write_project_data(&root, Some(b"KSC2scene"), Some(b"KAP0assets")).unwrap();
+        write_project_data(&root, Some(b"KSC2scene"), Some(b"KAP0assets"), None, None).unwrap();
         assert_eq!(
             std::fs::read(root.join("src/entry.ksc2")).unwrap(),
             b"KSC2scene"

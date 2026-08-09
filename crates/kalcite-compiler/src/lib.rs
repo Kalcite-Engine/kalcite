@@ -149,6 +149,8 @@ pub struct ProjectResources<'a> {
     pub entry_scene: &'a [u8],
     pub assets: &'a [u8],
     pub scene_runtime: Option<&'a str>,
+    pub input_runtime: Option<&'a str>,
+    pub save_runtime: Option<&'a str>,
 }
 impl core::fmt::Display for NativeError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -182,6 +184,8 @@ pub fn emit_numworks_project_with_resources(
         Some(resources.entry_scene),
         Some(resources.assets),
         resources.scene_runtime,
+        resources.input_runtime,
+        resources.save_runtime,
     )
     .map_err(NativeError::Backend)
 }
@@ -223,6 +227,8 @@ pub fn emit_desktop_project_with_resources(
         Some(resources.entry_scene),
         Some(resources.assets),
         resources.scene_runtime,
+        resources.input_runtime,
+        resources.save_runtime,
     )
     .map_err(DesktopError::Backend)
 }

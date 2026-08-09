@@ -16,7 +16,7 @@ impl core::fmt::Display for EmitError {
 
 pub fn emit_game(program: &Program) -> Result<String, EmitError> {
     let mut out = String::from(
-        "use crate::platform::{Color, Draw, Hardware, Input, Key, Storage, System, Vec2fx};\nuse crate::runtime::{Handle, SignalQueue, StaticPool};\nuse crate::stdlib::{Bits, Checksum, ColorUtil, Fixed, Math, MsgPack, Save};\n\n",
+        "use crate::platform::{Audio, Color, Draw, Hardware, Input, Key, Physics, Storage, System, Vec2fx};\nuse crate::project_data::ProjectSave;\nuse crate::runtime::{Handle, SignalQueue, StaticPool};\nuse crate::stdlib::{Bits, Checksum, ColorUtil, Fixed, Math, MsgPack, Save};\n\n",
     );
     for function in &program.functions {
         emit_free_function(&mut out, program, function);
@@ -210,6 +210,9 @@ fn expr_free(program: &Program, e: &Expr, scope: &HashSet<String>) -> String {
             let builtin = matches!(
                 first.as_str(),
                 "Input"
+                    | "Physics"
+                    | "Audio"
+                    | "ProjectSave"
                     | "Draw"
                     | "Color"
                     | "Key"
@@ -550,6 +553,9 @@ fn render_path(
     let builtin = matches!(
         first.as_str(),
         "Input"
+            | "Physics"
+            | "Audio"
+            | "ProjectSave"
             | "Draw"
             | "Color"
             | "Key"

@@ -211,7 +211,7 @@ fn build_desktop_command(args: &[String], run: bool, runner_args: &[String]) -> 
         }
     }
     let emitted = match resources.as_ref() {
-        Some((scene, assets, scene_runtime)) => {
+        Some((scene, assets, scene_runtime, input_runtime, save_runtime)) => {
             kalcite_compiler::emit_desktop_project_with_resources(
                 &source,
                 &app_name,
@@ -220,6 +220,8 @@ fn build_desktop_command(args: &[String], run: bool, runner_args: &[String]) -> 
                     entry_scene: scene,
                     assets,
                     scene_runtime: Some(scene_runtime),
+                    input_runtime: Some(input_runtime),
+                    save_runtime: Some(save_runtime),
                 },
             )
         }
@@ -376,7 +378,7 @@ fn build_nwa_command(args: &[String]) -> ExitCode {
     }
 
     let emitted = match resources.as_ref() {
-        Some((scene, assets, scene_runtime)) => {
+        Some((scene, assets, scene_runtime, input_runtime, save_runtime)) => {
             kalcite_compiler::emit_numworks_project_with_resources(
                 &source,
                 &app_name,
@@ -385,6 +387,8 @@ fn build_nwa_command(args: &[String]) -> ExitCode {
                     entry_scene: scene,
                     assets,
                     scene_runtime: Some(scene_runtime),
+                    input_runtime: Some(input_runtime),
+                    save_runtime: Some(save_runtime),
                 },
             )
         }
@@ -984,7 +988,7 @@ fn compile_project_resources(
     root: &Path,
     manifest: &kalcite_project::ProjectManifest,
     index: &kalcite_project::ProjectIndex,
-) -> Result<(Vec<u8>, Vec<u8>, String), String> {
+) -> Result<(Vec<u8>, Vec<u8>, String, String, String), String> {
     let scene_path = root.join(&manifest.entry_scene);
     let scene = kalcite_scene::load(&scene_path)
         .map_err(|error| format!("{}: {error}", scene_path.display()))?;
@@ -1009,7 +1013,23 @@ fn compile_project_resources(
     let scene_runtime = kalcite_project::emit_scene_runtime(index, &scene)?;
     let scene = kalcite_scene::try_encode_compiled(&scene)?;
     let assets = kalcite_assets::pack_dir(&root.join(&manifest.assets_dir))?;
-    Ok((scene, kalcite_assets::encode_pack(&assets), scene_runtime))
+    let input_path = root.join(&manifest.input_map);
+    let input_text = std::fs::read_to_string(&input_path)
+        .map_err(|error| format!("{}: {error}", input_path.display()))?;
+    let input_runtime = kalcite_input::emit_rust(&input_text)
+        .map_err(|error| format!("{}: {error}", input_path.display()))?;
+    let save_path = root.join(&manifest.save_schema);
+    let save_text = std::fs::read_to_string(&save_path)
+        .map_err(|error| format!("{}: {error}", save_path.display()))?;
+    let save_runtime = kalcite_save::emit_rust(&save_text)
+        .map_err(|error| format!("{}: {error}", save_path.display()))?;
+    Ok((
+        scene,
+        kalcite_assets::encode_pack(&assets),
+        scene_runtime,
+        input_runtime,
+        save_runtime,
+    ))
 }
 
 fn project_command(args: &[String], build: bool) -> ExitCode {

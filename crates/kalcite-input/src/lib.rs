@@ -38,6 +38,12 @@ impl Actions {
     pub fn actions(&self) -> impl Iterator<Item = &str> {
         self.bindings.keys().map(String::as_str)
     }
+
+    pub fn bindings(&self) -> impl Iterator<Item = (&str, &[u16])> {
+        self.bindings
+            .iter()
+            .map(|(action, keys)| (action.as_str(), keys.as_slice()))
+    }
 }
 pub fn key_code(name: &str) -> Option<u16> {
     Some(match name.trim() {
@@ -72,6 +78,33 @@ pub fn parse_map(text: &str) -> Result<Actions, String> {
         }
     }
     Ok(a)
+}
+
+/// Emit a tiny, allocation-free action lookup for generated targets.
+pub fn emit_rust(text: &str) -> Result<String, String> {
+    let actions = parse_map(text)?;
+    let mut out = String::from("pub fn action_mask(action:&str)->u64 { match action {\n");
+    for (action, keys) in actions.bindings() {
+        let mut mask = 0u64;
+        for key in keys {
+            let bit = match key {
+                1 => 0, // Left
+                2 => 3, // Right
+                3 => 1, // Up
+                4 => 2, // Down
+                5 => 4, // OK
+                6 => 5, // Back
+                7 => 6, // Home
+                8 => 7, // Plus
+                9 => 8, // Minus
+                _ => return Err(format!("unsupported key code {key}")),
+            };
+            mask |= 1u64 << bit;
+        }
+        out.push_str(&format!("{:?} => {mask}u64,\n", action));
+    }
+    out.push_str("_ => 0, } }\n");
+    Ok(out)
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Touch {
@@ -109,5 +142,12 @@ mod tests {
         assert!(a.pressed("Jump"));
         a.update(|_| false);
         assert!(a.released("Jump"));
+    }
+
+    #[test]
+    fn emits_deterministic_target_masks() {
+        let rust = emit_rust("Right=Right\nJump=OK|Up").unwrap();
+        assert!(rust.contains("\"Jump\" => 18u64"));
+        assert!(rust.contains("\"Right\" => 8u64"));
     }
 }

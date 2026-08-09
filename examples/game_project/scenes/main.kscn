@@ -9,4 +9,5 @@ script = "Player"
 speed = 2
 
 @signal Main/Player.moved -> Main.on_player_moved
+@signal Main/Player.collided -> Main.on_player_collided
 @autoload State GameState

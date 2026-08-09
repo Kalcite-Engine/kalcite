@@ -43,13 +43,13 @@ works.
       metadata, and a type-checked static signal connection
 - [x] Input map, save schema, tilemap CSV, asset pack, object files, compiled
       scene, profiler output, desktop/headless run, and NumWorks build paths
-- [ ] Exercise logical input actions in game code instead of physical keys
+- [x] Exercise logical input actions in game code instead of physical keys
 - [x] Add a PNG spritesheet with transparency and regions
 - [x] Render sprites, tilemap, camera movement, and multiple layers
-- [ ] Exercise physics world integration and collision callbacks
-- [ ] Exercise save/load and schema-version failure behavior from game code
+- [x] Exercise physics world integration and collision callbacks
+- [x] Exercise save/load and schema-version failure behavior from game code
 - [x] Exercise autoload lifecycle and direct generated signal delivery
-- [ ] Exercise audio through the platform abstraction
+- [x] Exercise audio through the platform abstraction
 
 ## Runtime subsystem status
 
@@ -59,23 +59,24 @@ works.
 - Renderer: stable layers, camera offset, sprites, regions, spritesheet frames,
   tilemaps, clipping, desktop framebuffer drawing, and the optimized NumWorks
   horizontal-run path are complete.
-- Physics: deterministic AABB blocking exists as an isolated crate. It is not yet
-  wired into generated project lifecycle code.
-- Input: action maps and pressed/held/released state exist. Generated games do not
-  yet load the project map into a shared platform-independent action API.
-- Save: schema parsing, typed headers, round trips, and migration detection exist.
-  Project-generated typed state and platform storage integration remain.
-- Profiler: frame CSV output works. Physics, renderer, dirty-region, asset, and
-  static-pool counters remain.
+- Physics: deterministic fixed-tick AABB blocking, collision queries, and static
+  signal callbacks are wired into generated desktop and NumWorks projects.
+- Input: project action maps generate compact target bitmasks with shared
+  pressed, held, released, and axis APIs on desktop and NumWorks.
+- Save: project schemas generate typed KSAV records and field accessors over the
+  shared platform storage API, including schema and future-version rejection.
+- Profiler: CSV output includes update, render, physics, draw, dirty-pixel/region,
+  sprite, tile, collision-query, pool, and static-RAM counters.
 - Packages: deterministic lock/add/remove/sync foundations exist. Dependency
   source materialization and compiler/project integration need further coverage.
 - LSP: compiler diagnostics work over stdio. Scene, asset, signal, input-action,
   export, and engine-symbol navigation/completion remain.
-- Audio: only the lightweight command/backend abstraction exists.
+- Audio: a lightweight tone/stop abstraction and command accounting are linked
+  on both targets, with graceful no-output behavior where hardware audio is
+  unavailable.
 
 ## Next implementation order
 
-1. Wire logical input, fixed-step physics, typed saves, and profiler counters into
-   one shared lifecycle.
-2. Expand `examples/game_project` for each runtime behavior as it lands.
-3. Repeat desktop/headless and native NumWorks validation.
+1. Complete dependency source materialization and compiler/project integration.
+2. Add engine-aware LSP diagnostics, completion, and navigation.
+3. Repeat the full completion audit and native validation.

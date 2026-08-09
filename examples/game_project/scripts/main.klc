@@ -2,11 +2,15 @@
 class Main extends Game {
     var score: u32 = 0;
     fn update() -> void {
-        if Input.held(Key.Left) { score += 1; }
+        if Input.action_held("Left") { score += 1; }
     }
 
     fn on_player_moved(value: i16) -> void {
         score += 1;
+    }
+
+    fn on_player_collided() -> void {
+        score += 10;
     }
 
     fn draw() -> void {
