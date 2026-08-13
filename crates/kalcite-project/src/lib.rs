@@ -141,6 +141,17 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Vec<ManifestDiagnostic> 
         });
     }
     let supported = target_capabilities(&manifest.target);
+    for capability in profile_capabilities(&manifest.profile) {
+        if !supported.contains(capability) {
+            diagnostics.push(ManifestDiagnostic {
+                code: "KLC2005",
+                message: format!(
+                    "profile `{}` requires capability `{capability}`, which target `{}` does not provide",
+                    manifest.profile, manifest.target
+                ),
+            });
+        }
+    }
     for capability in &manifest.capabilities {
         if !KNOWN_CAPABILITIES.contains(&capability.as_str()) {
             diagnostics.push(ManifestDiagnostic {
@@ -158,6 +169,18 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Vec<ManifestDiagnostic> 
         }
     }
     diagnostics
+}
+
+/// Capabilities implied by a product profile. These are deliberately small:
+/// extra services must still be declared in the manifest by the project that
+/// uses them.
+pub fn profile_capabilities(profile: &str) -> &'static [&'static str] {
+    match profile {
+        "ui" => &["window", "keyboard"],
+        "embedded" => &["keyboard"],
+        "cli" | "game2d" | "wasm" => &[],
+        _ => &[],
+    }
 }
 
 fn is_known_target(target: &str) -> bool {
@@ -923,6 +946,17 @@ mod tests {
         };
         let diagnostics = validate_manifest(&manifest);
         assert!(diagnostics.iter().any(|item| item.code == "KLC2003"));
+    }
+
+    #[test]
+    fn ui_profile_requires_a_window_capability() {
+        let manifest = ProjectManifest {
+            target: "numworks".into(),
+            profile: "ui".into(),
+            ..ProjectManifest::default()
+        };
+        let diagnostics = validate_manifest(&manifest);
+        assert!(diagnostics.iter().any(|item| item.code == "KLC2005"));
     }
 
     #[test]
