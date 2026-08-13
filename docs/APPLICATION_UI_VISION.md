@@ -192,3 +192,6 @@ Desktop support must not turn into an opaque runtime. Every new feature must:
 
 This preserves Kalcite's core promise: applications, UIs, games, and embedded
 programs use the same native toolchain while retaining understandable costs.
+
+Implementation status, acceptance criteria, and delivery sequencing are kept
+in [APPLICATION_UI_DELIVERY_PLAN.md](APPLICATION_UI_DELIVERY_PLAN.md).
