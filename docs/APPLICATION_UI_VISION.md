@@ -26,9 +26,8 @@ shared with games.
 | --- | --- | --- |
 | AOT native path and no-GC constrained runtime | Current | Syntax -> HIR -> MIR -> Rust/platform backends; NumWorks is `no_std`. |
 | Static scenes, GUI nodes, containers, focus and button signals | Current | `Control`, basic controls, static containers and keyboard focus are compiled and validated. |
-| Desktop runner | Current | Native development window with a fixed 320x240 RGB565 game surface and keyboard input. |
-| Resizable UI surface vertical slice | WIP | `kalcite-backend-desktop` can emit a standalone settings app with a variable-size surface, panel, button, bounded text field, keyboard focus, and pointer activation. |
-| Product profiles and target capability validation | WIP | Manifest and `project-check` / `project-build` validate declared profiles and capabilities. |
+| Desktop runner | Current | Native development window, currently a fixed 320x240 RGB565 logical surface with keyboard input. |
+| Product profiles, capability validation, and build-report baseline | WIP | Manifest and `project-check` / `project-build` validate contracts; `--report` measures scenes, assets, and declared pools. |
 | CLI-focused standard library and application packaging | Planned | No dedicated CLI runtime or packaging flow yet. |
 | Adaptive desktop UI, text shaping, pointer/touch, accessibility | Planned | The current GUI is intentionally bounded and simple. |
 | Typed bindings, UI styles, virtual lists and native control adapters | Planned | These require scene/compiler/runtime work described below. |
@@ -92,27 +91,15 @@ replace.
 
 ### Phase A: application foundation
 
-1. Finish profile/capability reporting, including required services, active
-   fallbacks, static memory, pools, and scene counts.
+1. Extend the current profile/capability report with target linker size, stack
+   analysis, and named fallbacks. It already reports required/provided services,
+   static artifact data, pools, and scene counts; unavailable analysis is
+   labelled rather than estimated. See [BUILD_REPORT.md](BUILD_REPORT.md).
 2. Keep the 320x240 game/embedded viewport, but add a separate resizable,
    DPI-aware desktop surface for the `ui` profile.
 3. Stabilise `Control`, containers, focus order, static signals, and scene
    diagnostics as public UI foundations.
 4. Add a CLI entry-point contract that does not link window or renderer code.
-
-### Current UI surface vertical slice
-
-The first desktop UI slice is deliberately a small generated application rather
-than a claim of a finished widget framework. `emit_ui_settings_project` in
-`kalcite-backend-desktop` writes a native minifb application with a resizable
-surface. Its pixels are sized from `Window::get_size()` each frame and never
-pass through the 320x240 game framebuffer.
-
-It demonstrates the public constraints for the next steps: a centered panel
-with bounded geometry, pointer activation, Tab/Enter keyboard navigation, and
-a name field capped at 24 characters. It does **not** claim DPI scaling,
-production text editing, retained scene lowering, accessibility, or native
-widgets. Those remain Phase B/C work.
 
 ### Phase B: production UI primitives
 
