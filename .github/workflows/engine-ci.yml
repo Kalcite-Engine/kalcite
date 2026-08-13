@@ -10,4 +10,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
+      - run: cargo run -p kalcite-cli -- test tests/klc
       - run: cargo check --workspace
