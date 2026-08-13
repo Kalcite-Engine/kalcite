@@ -12,7 +12,7 @@ use std::{
 
 fn usage() {
     eprintln!(
-        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR] [--target TARGET] [--profile cli|ui|game2d|embedded|wasm]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|web] [--profile cli|ui|game2d|embedded|wasm]\n  kalcite build-app FILE.klc --target numworks [-o GAME.nwa] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME SOURCE [REVISION] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|web]"
+        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR] [--target TARGET] [--profile cli|ui|game2d|embedded|wasm]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|web] [--profile cli|ui|game2d|embedded|wasm]\n  kalcite ui-settings [DIR] [--title TITLE] [--width N] [--height N]\n  kalcite build-app FILE.klc --target numworks [-o GAME.nwa] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME SOURCE [REVISION] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|web]"
     );
 }
 
@@ -26,6 +26,7 @@ fn main() -> ExitCode {
         "init" => init_command(&args[2..]),
         "project-check" => project_command(&args[2..], false),
         "project-build" => project_command(&args[2..], true),
+        "ui-settings" => ui_settings_command(&args[2..]),
         "build-nwa" => build_nwa_command(&args[2..]),
         "build-app" => build_app_command(&args[2..]),
         "doctor" => doctor_command(&args[2..]),
@@ -39,6 +40,64 @@ fn main() -> ExitCode {
         "test" => test_command(&args[2..]),
         "run" => run_command(&args[2..]),
         _ => file_command(command, &args[2..]),
+    }
+}
+
+/// Generate the first independently resizable desktop UI sample. It is kept
+/// separate from `run`, whose fixed RGB565 viewport remains the game path.
+fn ui_settings_command(args: &[String]) -> ExitCode {
+    let root = args
+        .first()
+        .filter(|argument| !argument.starts_with('-'))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(".kalcite/ui-settings"));
+    let mut options = kalcite_backend_desktop::UiSurfaceOptions::default();
+    let mut index = usize::from(
+        args.first()
+            .is_some_and(|argument| !argument.starts_with('-')),
+    );
+    while index < args.len() {
+        let option = &args[index];
+        let value = args.get(index + 1);
+        match (option.as_str(), value) {
+            ("--title", Some(value)) => options.title = value.clone(),
+            ("--width", Some(value)) => match value.parse() {
+                Ok(width) => options.initial_width = width,
+                Err(_) => {
+                    eprintln!("invalid UI width `{value}`");
+                    return ExitCode::FAILURE;
+                }
+            },
+            ("--height", Some(value)) => match value.parse() {
+                Ok(height) => options.initial_height = height,
+                Err(_) => {
+                    eprintln!("invalid UI height `{value}`");
+                    return ExitCode::FAILURE;
+                }
+            },
+            _ => {
+                eprintln!("unknown or incomplete ui-settings option `{option}`");
+                return ExitCode::FAILURE;
+            }
+        }
+        index += 2;
+    }
+    match kalcite_backend_desktop::emit_ui_settings_project(&root, &options) {
+        Ok(()) => {
+            println!(
+                "generated resizable UI Settings sample in {}",
+                root.display()
+            );
+            println!(
+                "next: cargo run --manifest-path {}/Cargo.toml",
+                root.display()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("UI sample generation failed: {error}");
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -1429,13 +1488,21 @@ fn file_command(command: &str, args: &[String]) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::default_numworks_name;
+    use super::{default_numworks_name, ui_settings_command};
+    use std::process::ExitCode;
 
     #[test]
     fn numworks_default_name_is_ascii_and_bounded() {
         assert_eq!(default_numworks_name("GameProject"), "GameProje");
         assert_eq!(default_numworks_name("Jeu🎮"), "Jeu");
         assert_eq!(default_numworks_name("🎮"), "Kalcite");
+    }
+
+    #[test]
+    fn ui_settings_rejects_small_surface() {
+        let root = std::env::temp_dir().join(format!("kalcite-ui-cli-{}", std::process::id()));
+        let args = vec![root.display().to_string(), "--width".into(), "100".into()];
+        assert_eq!(ui_settings_command(&args), ExitCode::FAILURE);
     }
 }
 
