@@ -18,6 +18,12 @@ pub struct ProjectManifest {
     pub input_map: String,
     pub save_schema: String,
     pub target: String,
+    /// Product shape selected for this build. Profiles choose only the
+    /// baseline contract; they never alter language semantics.
+    pub profile: String,
+    /// Optional platform services required by the project. These are checked
+    /// before build so a target cannot silently ship a missing feature.
+    pub capabilities: Vec<String>,
 }
 
 impl Default for ProjectManifest {
@@ -31,6 +37,8 @@ impl Default for ProjectManifest {
             input_map: "input.kmap".into(),
             save_schema: "save.kschema".into(),
             target: "portable".into(),
+            profile: "game2d".into(),
+            capabilities: Vec::new(),
         }
     }
 }
@@ -53,6 +61,15 @@ impl ProjectManifest {
                 "input_map" => out.input_map = value,
                 "save_schema" => out.save_schema = value,
                 "target" => out.target = value,
+                "profile" => out.profile = value,
+                "capabilities" => {
+                    out.capabilities = value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_owned)
+                        .collect();
+                }
                 _ => {}
             }
         }
@@ -61,7 +78,7 @@ impl ProjectManifest {
 
     pub fn encode(&self) -> String {
         format!(
-            "[project]\nname = \"{}\"\nentry_scene = \"{}\"\nscripts_dir = \"{}\"\nscenes_dir = \"{}\"\nassets_dir = \"{}\"\ninput_map = \"{}\"\nsave_schema = \"{}\"\ntarget = \"{}\"\n",
+            "[project]\nname = \"{}\"\nentry_scene = \"{}\"\nscripts_dir = \"{}\"\nscenes_dir = \"{}\"\nassets_dir = \"{}\"\ninput_map = \"{}\"\nsave_schema = \"{}\"\ntarget = \"{}\"\nprofile = \"{}\"\ncapabilities = \"{}\"\n",
             self.name,
             self.entry_scene,
             self.scripts_dir,
@@ -69,8 +86,95 @@ impl ProjectManifest {
             self.assets_dir,
             self.input_map,
             self.save_schema,
-            self.target
+            self.target,
+            self.profile,
+            self.capabilities.join(", ")
         )
+    }
+}
+
+/// An issue in a project's target/profile contract. It deliberately does not
+/// share the compiler diagnostic type: a manifest can be checked before any
+/// source file is parsed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ManifestDiagnostic {
+    pub code: &'static str,
+    pub message: String,
+}
+
+const KNOWN_PROFILES: &[&str] = &["cli", "ui", "game2d", "embedded", "wasm"];
+const KNOWN_CAPABILITIES: &[&str] = &[
+    "window",
+    "gpu",
+    "pointer",
+    "keyboard",
+    "gamepad",
+    "filesystem",
+    "network",
+    "threads",
+    "audio",
+    "clipboard",
+    "native_dialogs",
+    "accessibility",
+];
+
+/// Validate the product profile and requested platform services. The return
+/// value is intentionally data-only so editors and the CLI can present the
+/// same diagnostics.
+pub fn validate_manifest(manifest: &ProjectManifest) -> Vec<ManifestDiagnostic> {
+    let mut diagnostics = Vec::new();
+    if !KNOWN_PROFILES.contains(&manifest.profile.as_str()) {
+        diagnostics.push(ManifestDiagnostic {
+            code: "KLC2001",
+            message: format!(
+                "unknown project profile `{}`; expected one of {}",
+                manifest.profile,
+                KNOWN_PROFILES.join(", ")
+            ),
+        });
+        return diagnostics;
+    }
+    if !is_known_target(&manifest.target) {
+        diagnostics.push(ManifestDiagnostic {
+            code: "KLC2004",
+            message: format!("unknown target `{}`", manifest.target),
+        });
+    }
+    let supported = target_capabilities(&manifest.target);
+    for capability in &manifest.capabilities {
+        if !KNOWN_CAPABILITIES.contains(&capability.as_str()) {
+            diagnostics.push(ManifestDiagnostic {
+                code: "KLC2002",
+                message: format!("unknown capability `{capability}`"),
+            });
+        } else if !supported.contains(&capability.as_str()) {
+            diagnostics.push(ManifestDiagnostic {
+                code: "KLC2003",
+                message: format!(
+                    "target `{}` does not provide required capability `{capability}`",
+                    manifest.target
+                ),
+            });
+        }
+    }
+    diagnostics
+}
+
+fn is_known_target(target: &str) -> bool {
+    matches!(target, "portable" | "numworks" | "desktop" | "web")
+}
+
+/// Capabilities are a build-time contract, not an implied runtime dependency.
+/// A backend only links an adapter after a project asks for it.
+pub fn target_capabilities(target: &str) -> &'static [&'static str] {
+    match target {
+        "numworks" => &["keyboard"],
+        // The desktop runner currently exposes only the services it actually
+        // implements. Rich desktop UI capabilities remain planned work.
+        "desktop" => &["window", "keyboard"],
+        // Web is a declared object target, not a shipped platform backend.
+        "web" | "portable" => &[],
+        _ => &[],
     }
 }
 
@@ -790,8 +894,35 @@ mod tests {
     use super::*;
     #[test]
     fn manifest_round_trip() {
-        let m = ProjectManifest::parse(&ProjectManifest::default().encode());
+        let mut original = ProjectManifest::default();
+        original.profile = "ui".into();
+        original.capabilities = vec!["window".into(), "keyboard".into()];
+        let m = ProjectManifest::parse(&original.encode());
         assert_eq!(m.scripts_dir, "scripts");
+        assert_eq!(m.profile, "ui");
+        assert_eq!(m.capabilities, original.capabilities);
+    }
+
+    #[test]
+    fn manifest_rejects_unknown_profile_and_capability() {
+        let manifest = ProjectManifest {
+            profile: "desktop-app".into(),
+            capabilities: vec!["quantum".into()],
+            ..ProjectManifest::default()
+        };
+        let diagnostics = validate_manifest(&manifest);
+        assert!(diagnostics.iter().any(|item| item.code == "KLC2001"));
+    }
+
+    #[test]
+    fn manifest_rejects_missing_target_capability() {
+        let manifest = ProjectManifest {
+            target: "numworks".into(),
+            capabilities: vec!["native_dialogs".into()],
+            ..ProjectManifest::default()
+        };
+        let diagnostics = validate_manifest(&manifest);
+        assert!(diagnostics.iter().any(|item| item.code == "KLC2003"));
     }
 
     #[test]

@@ -1,7 +1,8 @@
 use kalcite_linter::{Severity, has_errors, lint};
 use kalcite_object::Target;
 use kalcite_project::{
-    discover, discover_scenes, find_root, init_project, load_manifest, validate, validate_scene,
+    discover, discover_scenes, find_root, init_project, load_manifest, validate, validate_manifest,
+    validate_scene,
 };
 use std::{
     env, fs,
@@ -11,7 +12,7 @@ use std::{
 
 fn usage() {
     eprintln!(
-        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|web]\n  kalcite build-app FILE.klc --target numworks [-o GAME.nwa] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME SOURCE [REVISION] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|web]"
+        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR] [--target TARGET] [--profile cli|ui|game2d|embedded|wasm]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|web] [--profile cli|ui|game2d|embedded|wasm]\n  kalcite build-app FILE.klc --target numworks [-o GAME.nwa] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME SOURCE [REVISION] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|web]"
     );
 }
 
@@ -1066,13 +1067,29 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
         eprintln!("no kalcite.toml found from {}", start.display());
         return ExitCode::FAILURE;
     };
-    let manifest = match load_manifest(&root) {
+    let mut manifest = match load_manifest(&root) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("manifest error: {e:?}");
             return ExitCode::FAILURE;
         }
     };
+    if let Some(target) = option_value(args, "--target") {
+        manifest.target = target.to_owned();
+    }
+    if let Some(profile) = option_value(args, "--profile") {
+        manifest.profile = profile.to_owned();
+    }
+    let manifest_diagnostics = validate_manifest(&manifest);
+    for diagnostic in &manifest_diagnostics {
+        eprintln!(
+            "manifest: error[{}]: {}",
+            diagnostic.code, diagnostic.message
+        );
+    }
+    if !manifest_diagnostics.is_empty() {
+        return ExitCode::FAILURE;
+    }
     let index = match discover(&root, &manifest) {
         Ok(v) => v,
         Err(e) => {
@@ -1186,7 +1203,9 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
         );
     }
     println!(
-        "ok: {} scripts, {} global classes, {} scene nodes, {} assets",
+        "ok: profile `{}`, target `{}`, {} scripts, {} global classes, {} scene nodes, {} assets",
+        manifest.profile,
+        manifest.target,
         index.scripts.len(),
         index.symbols.len(),
         scene.nodes.len(),
@@ -1402,6 +1421,12 @@ fn parse_target_option(args: &[String]) -> Option<Target> {
     args.windows(2)
         .find(|w| w[0] == "--target")
         .map(|w| target_from_name(&w[1]))
+}
+
+fn option_value<'a>(args: &'a [String], option: &str) -> Option<&'a str> {
+    args.windows(2)
+        .find(|pair| pair[0] == option)
+        .map(|pair| pair[1].as_str())
 }
 fn relative<'a>(root: &'a Path, path: &'a Path) -> &'a Path {
     path.strip_prefix(root).unwrap_or(path)
