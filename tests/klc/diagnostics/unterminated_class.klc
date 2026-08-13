@@ -1,0 +1,2 @@
+// kalcite: expect-error
+public class Broken extend Game {

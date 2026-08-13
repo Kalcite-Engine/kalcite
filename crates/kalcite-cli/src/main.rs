@@ -722,19 +722,42 @@ fn test_command(args: &[String]) -> ExitCode {
     };
     let mut failed = 0;
     for case in &cases {
-        let src = match fs::read_to_string(case) {
+        let path = &case.path;
+        let src = match fs::read_to_string(path) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("FAIL {case}: {e}");
+                eprintln!("FAIL {}: {e}", path.display());
                 failed += 1;
                 continue;
             }
         };
-        match kalcite_compiler::check(&src) {
-            Ok(_) => println!("PASS {case}"),
-            Err(e) => {
-                eprintln!("FAIL {case}: {e}");
-                failed += 1
+        match (&case.expectation, kalcite_compiler::check(&src)) {
+            (kalcite_test_runner::Expectation::Pass, Ok(_)) => {
+                println!("PASS {}", path.display());
+            }
+            (kalcite_test_runner::Expectation::Pass, Err(error)) => {
+                eprintln!("FAIL {}: {error}", path.display());
+                failed += 1;
+            }
+            (kalcite_test_runner::Expectation::Error { contains }, Err(error)) => {
+                let error = error.to_string();
+                if contains
+                    .as_ref()
+                    .is_none_or(|fragment| error.contains(fragment))
+                {
+                    println!("PASS {} (expected error)", path.display());
+                } else {
+                    eprintln!(
+                        "FAIL {}: expected diagnostic containing `{}`, got: {error}",
+                        path.display(),
+                        contains.as_deref().unwrap_or_default()
+                    );
+                    failed += 1;
+                }
+            }
+            (kalcite_test_runner::Expectation::Error { .. }, Ok(_)) => {
+                eprintln!("FAIL {}: expected compilation to fail", path.display());
+                failed += 1;
             }
         }
     }
