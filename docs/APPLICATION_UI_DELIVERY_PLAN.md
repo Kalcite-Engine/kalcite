@@ -59,7 +59,7 @@ adapter.
 | Rust and assembly escape hatches | Current | Native code path | Target-specific native code remains explicit and compiler-validated. |
 | Formatter, diagnostics, LSP | WIP | Existing CLI/LSP crates | Formatting and language-server checks run in CI; new syntax receives source spans and actionable messages. |
 | Tests and benchmarks in KLC | WIP | Test runner and CLI | Tests are discoverable and run headlessly; benchmark output is reproducible. |
-| Unified build report | Planned | Compiler/CLI/profiler | Report includes artifact/assets, memory/pools/stack, UI counts, capabilities, fallbacks, and debug render metrics. |
+| Unified build report | WIP | Project/CLI report baseline | `--report` measures profile/target/capabilities, scene/UI counts, assets, static artifact data, and declared pools. Target executable size, stack analysis, and render metrics remain explicitly unavailable until their target passes exist. |
 | Inspector and UI profiler | Planned | Editor/profiler | Inspector reads compiled scene metadata; profiler reports layout/render/invalidation costs. |
 
 ## Platform delivery

@@ -1724,6 +1724,7 @@ name = "kalcite-cli"
 version = "0.14.0"
 dependencies = [
  "kalcite-assets",
+ "kalcite-backend-desktop",
  "kalcite-backend-ti",
  "kalcite-compiler",
  "kalcite-input",

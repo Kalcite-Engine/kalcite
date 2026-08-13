@@ -18,6 +18,12 @@ pub struct ProjectManifest {
     pub input_map: String,
     pub save_schema: String,
     pub target: String,
+    /// Product shape selected for this build. Profiles choose only the
+    /// baseline contract; they never alter language semantics.
+    pub profile: String,
+    /// Optional platform services required by the project. These are checked
+    /// before build so a target cannot silently ship a missing feature.
+    pub capabilities: Vec<String>,
 }
 
 impl Default for ProjectManifest {
@@ -31,6 +37,8 @@ impl Default for ProjectManifest {
             input_map: "input.kmap".into(),
             save_schema: "save.kschema".into(),
             target: "portable".into(),
+            profile: "game2d".into(),
+            capabilities: Vec::new(),
         }
     }
 }
@@ -53,6 +61,15 @@ impl ProjectManifest {
                 "input_map" => out.input_map = value,
                 "save_schema" => out.save_schema = value,
                 "target" => out.target = value,
+                "profile" => out.profile = value,
+                "capabilities" => {
+                    out.capabilities = value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_owned)
+                        .collect();
+                }
                 _ => {}
             }
         }
@@ -61,7 +78,7 @@ impl ProjectManifest {
 
     pub fn encode(&self) -> String {
         format!(
-            "[project]\nname = \"{}\"\nentry_scene = \"{}\"\nscripts_dir = \"{}\"\nscenes_dir = \"{}\"\nassets_dir = \"{}\"\ninput_map = \"{}\"\nsave_schema = \"{}\"\ntarget = \"{}\"\n",
+            "[project]\nname = \"{}\"\nentry_scene = \"{}\"\nscripts_dir = \"{}\"\nscenes_dir = \"{}\"\nassets_dir = \"{}\"\ninput_map = \"{}\"\nsave_schema = \"{}\"\ntarget = \"{}\"\nprofile = \"{}\"\ncapabilities = \"{}\"\n",
             self.name,
             self.entry_scene,
             self.scripts_dir,
@@ -69,8 +86,128 @@ impl ProjectManifest {
             self.assets_dir,
             self.input_map,
             self.save_schema,
-            self.target
+            self.target,
+            self.profile,
+            self.capabilities.join(", ")
         )
+    }
+}
+
+/// An issue in a project's target/profile contract. It deliberately does not
+/// share the compiler diagnostic type: a manifest can be checked before any
+/// source file is parsed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ManifestDiagnostic {
+    pub code: &'static str,
+    pub message: String,
+}
+
+const KNOWN_PROFILES: &[&str] = &["cli", "ui", "game2d", "embedded", "wasm"];
+const KNOWN_CAPABILITIES: &[&str] = &[
+    "window",
+    "gpu",
+    "pointer",
+    "keyboard",
+    "gamepad",
+    "filesystem",
+    "network",
+    "threads",
+    "audio",
+    "clipboard",
+    "native_dialogs",
+    "accessibility",
+];
+
+/// Validate the product profile and requested platform services. The return
+/// value is intentionally data-only so editors and the CLI can present the
+/// same diagnostics.
+pub fn validate_manifest(manifest: &ProjectManifest) -> Vec<ManifestDiagnostic> {
+    let mut diagnostics = Vec::new();
+    if !KNOWN_PROFILES.contains(&manifest.profile.as_str()) {
+        diagnostics.push(ManifestDiagnostic {
+            code: "KLC2001",
+            message: format!(
+                "unknown project profile `{}`; expected one of {}",
+                manifest.profile,
+                KNOWN_PROFILES.join(", ")
+            ),
+        });
+        return diagnostics;
+    }
+    if !is_known_target(&manifest.target) {
+        diagnostics.push(ManifestDiagnostic {
+            code: "KLC2004",
+            message: format!("unknown target `{}`", manifest.target),
+        });
+    }
+    let supported = target_capabilities(&manifest.target);
+    for capability in profile_capabilities(&manifest.profile) {
+        if !supported.contains(capability) {
+            diagnostics.push(ManifestDiagnostic {
+                code: "KLC2005",
+                message: format!(
+                    "profile `{}` requires capability `{capability}`, which target `{}` does not provide",
+                    manifest.profile, manifest.target
+                ),
+            });
+        }
+    }
+    for capability in &manifest.capabilities {
+        if !KNOWN_CAPABILITIES.contains(&capability.as_str()) {
+            diagnostics.push(ManifestDiagnostic {
+                code: "KLC2002",
+                message: format!("unknown capability `{capability}`"),
+            });
+        } else if !supported.contains(&capability.as_str()) {
+            diagnostics.push(ManifestDiagnostic {
+                code: "KLC2003",
+                message: format!(
+                    "target `{}` does not provide required capability `{capability}`",
+                    manifest.target
+                ),
+            });
+        }
+    }
+    diagnostics
+}
+
+/// Capabilities implied by a product profile. These are deliberately small:
+/// extra services must still be declared in the manifest by the project that
+/// uses them.
+pub fn profile_capabilities(profile: &str) -> &'static [&'static str] {
+    match profile {
+        "ui" => &["window", "keyboard"],
+        "embedded" => &["keyboard"],
+        "cli" | "game2d" | "wasm" => &[],
+        _ => &[],
+    }
+}
+
+/// Return the complete, sorted capability contract for a project. Profile
+/// baselines and explicitly requested services are intentionally both shown:
+/// this makes build output explain *why* an adapter is needed.
+pub fn required_capabilities(manifest: &ProjectManifest) -> Vec<&str> {
+    let mut capabilities = BTreeSet::new();
+    capabilities.extend(profile_capabilities(&manifest.profile).iter().copied());
+    capabilities.extend(manifest.capabilities.iter().map(String::as_str));
+    capabilities.into_iter().collect()
+}
+
+fn is_known_target(target: &str) -> bool {
+    matches!(target, "portable" | "numworks" | "desktop" | "web")
+}
+
+/// Capabilities are a build-time contract, not an implied runtime dependency.
+/// A backend only links an adapter after a project asks for it.
+pub fn target_capabilities(target: &str) -> &'static [&'static str] {
+    match target {
+        "numworks" => &["keyboard"],
+        // The desktop runner currently exposes only the services it actually
+        // implements. Rich desktop UI capabilities remain planned work.
+        "desktop" => &["window", "keyboard"],
+        // Web is a declared object target, not a shipped platform backend.
+        "web" | "portable" => &[],
+        _ => &[],
     }
 }
 
@@ -94,6 +231,119 @@ pub struct ScriptSymbol {
 pub struct ProjectIndex {
     pub scripts: Vec<ScriptUnit>,
     pub symbols: BTreeMap<String, ScriptSymbol>,
+}
+
+/// A declared fixed-capacity class pool.
+///
+/// The compiler does not know a class's final target layout at project-scan
+/// time, so this records only the source-level capacity. The build report
+/// deliberately does not pretend that this is a byte-accurate RAM estimate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PoolReport {
+    pub class_name: String,
+    pub capacity: usize,
+}
+
+/// Facts produced by the asset pipeline and supplied to the project report.
+/// Keeping this type independent of `kalcite-assets` lets editors produce the
+/// same report without linking the packer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AssetReport {
+    pub entries: usize,
+    pub payload_bytes: usize,
+    pub packed_bytes: usize,
+}
+
+/// A compact, target-independent summary of the parts of a project whose
+/// costs are already known before native linking.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProjectReport {
+    pub profile: String,
+    pub target: String,
+    pub required_capabilities: Vec<String>,
+    pub provided_capabilities: Vec<String>,
+    pub script_count: usize,
+    pub global_class_count: usize,
+    pub scene_count: usize,
+    pub scene_node_count: usize,
+    pub scene_connection_count: usize,
+    pub scene_autoload_count: usize,
+    pub compiled_scene_bytes: usize,
+    pub assets: AssetReport,
+    pub pools: Vec<PoolReport>,
+}
+
+impl ProjectReport {
+    /// Build a report from validated project inputs. `compiled_scene_bytes`
+    /// must be the sum of the actual encoded scene artifacts, not an estimate.
+    pub fn from_project(
+        manifest: &ProjectManifest,
+        index: &ProjectIndex,
+        scenes: &[&kalcite_scene::Scene],
+        compiled_scene_bytes: usize,
+        assets: AssetReport,
+    ) -> Self {
+        let mut pools = Vec::new();
+        for script in &index.scripts {
+            for item in &script.module.items {
+                let Item::Class(class) = item else {
+                    continue;
+                };
+                let Some(attribute) = class
+                    .attrs
+                    .iter()
+                    .find(|attribute| attribute.name == "pool")
+                else {
+                    continue;
+                };
+                let Some(capacity) = attribute
+                    .args
+                    .first()
+                    .and_then(|value| value.parse::<usize>().ok())
+                else {
+                    continue;
+                };
+                pools.push(PoolReport {
+                    class_name: class.name.clone(),
+                    capacity,
+                });
+            }
+        }
+        pools.sort_by(|left, right| left.class_name.cmp(&right.class_name));
+
+        Self {
+            profile: manifest.profile.clone(),
+            target: manifest.target.clone(),
+            required_capabilities: required_capabilities(manifest)
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            provided_capabilities: target_capabilities(&manifest.target)
+                .iter()
+                .map(|capability| (*capability).to_owned())
+                .collect(),
+            script_count: index.scripts.len(),
+            global_class_count: index.symbols.len(),
+            scene_count: scenes.len(),
+            scene_node_count: scenes.iter().map(|scene| scene.nodes.len()).sum(),
+            scene_connection_count: scenes.iter().map(|scene| scene.connections.len()).sum(),
+            scene_autoload_count: scenes.iter().map(|scene| scene.autoloads.len()).sum(),
+            compiled_scene_bytes,
+            assets,
+            pools,
+        }
+    }
+
+    /// Bytes of compiled project data known before native linking. This is a
+    /// lower bound for the final binary's static data, not a RAM or stack
+    /// estimate.
+    pub fn known_static_data_bytes(&self) -> usize {
+        self.compiled_scene_bytes + self.assets.packed_bytes
+    }
+
+    pub fn total_pool_capacity(&self) -> usize {
+        self.pools.iter().map(|pool| pool.capacity).sum()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2292,8 +2542,110 @@ mod tests {
     use super::*;
     #[test]
     fn manifest_round_trip() {
-        let m = ProjectManifest::parse(&ProjectManifest::default().encode());
+        let mut original = ProjectManifest::default();
+        original.profile = "ui".into();
+        original.capabilities = vec!["window".into(), "keyboard".into()];
+        let m = ProjectManifest::parse(&original.encode());
         assert_eq!(m.scripts_dir, "scripts");
+        assert_eq!(m.profile, "ui");
+        assert_eq!(m.capabilities, original.capabilities);
+    }
+
+    #[test]
+    fn manifest_rejects_unknown_profile_and_capability() {
+        let manifest = ProjectManifest {
+            profile: "desktop-app".into(),
+            capabilities: vec!["quantum".into()],
+            ..ProjectManifest::default()
+        };
+        let diagnostics = validate_manifest(&manifest);
+        assert!(diagnostics.iter().any(|item| item.code == "KLC2001"));
+    }
+
+    #[test]
+    fn manifest_rejects_missing_target_capability() {
+        let manifest = ProjectManifest {
+            target: "numworks".into(),
+            capabilities: vec!["native_dialogs".into()],
+            ..ProjectManifest::default()
+        };
+        let diagnostics = validate_manifest(&manifest);
+        assert!(diagnostics.iter().any(|item| item.code == "KLC2003"));
+    }
+
+    #[test]
+    fn ui_profile_requires_a_window_capability() {
+        let manifest = ProjectManifest {
+            target: "numworks".into(),
+            profile: "ui".into(),
+            ..ProjectManifest::default()
+        };
+        let diagnostics = validate_manifest(&manifest);
+        assert!(diagnostics.iter().any(|item| item.code == "KLC2005"));
+    }
+
+    #[test]
+    fn required_capabilities_combine_profile_and_manifest_requirements() {
+        let manifest = ProjectManifest {
+            target: "desktop".into(),
+            profile: "ui".into(),
+            capabilities: vec!["clipboard".into(), "keyboard".into()],
+            ..ProjectManifest::default()
+        };
+        assert_eq!(
+            required_capabilities(&manifest),
+            vec!["clipboard", "keyboard", "window"]
+        );
+    }
+
+    #[test]
+    fn project_report_summarises_known_costs_and_declared_pools() {
+        let source = "@pool(4) class Worker extends Node {}\nclass Main extends Node {}";
+        let module = parse(source).unwrap();
+        let mut index = ProjectIndex::default();
+        for item in &module.items {
+            if let Item::Class(class) = item {
+                index.symbols.insert(
+                    class.name.clone(),
+                    symbol_for(class, Path::new("scripts/main.klc")),
+                );
+            }
+        }
+        index.scripts.push(ScriptUnit {
+            path: PathBuf::from("scripts/main.klc"),
+            source: source.into(),
+            module,
+        });
+        let scene = kalcite_scene::parse(
+            "[node \"Main\"]\n[node \"Worker\" parent=\"Main\"]\n@autoload Store\n",
+        )
+        .unwrap();
+        let manifest = ProjectManifest {
+            target: "desktop".into(),
+            profile: "ui".into(),
+            ..ProjectManifest::default()
+        };
+
+        let report = ProjectReport::from_project(
+            &manifest,
+            &index,
+            &[&scene],
+            80,
+            AssetReport {
+                entries: 2,
+                payload_bytes: 40,
+                packed_bytes: 64,
+            },
+        );
+
+        assert_eq!(report.required_capabilities, ["keyboard", "window"]);
+        assert_eq!(report.provided_capabilities, ["window", "keyboard"]);
+        assert_eq!(report.scene_node_count, 2);
+        assert_eq!(report.scene_autoload_count, 1);
+        assert_eq!(report.pools.len(), 1);
+        assert_eq!(report.pools[0].class_name, "Worker");
+        assert_eq!(report.total_pool_capacity(), 4);
+        assert_eq!(report.known_static_data_bytes(), 144);
     }
 
     #[test]

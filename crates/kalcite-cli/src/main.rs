@@ -1,7 +1,8 @@
 use kalcite_linter::{Severity, has_errors, lint};
 use kalcite_object::Target;
 use kalcite_project::{
-    discover, discover_scenes, find_root, init_project, load_manifest, validate, validate_scene,
+    AssetReport, ProjectReport, discover, discover_scenes, find_root, init_project, load_manifest,
+    required_capabilities, validate, validate_manifest, validate_scene,
 };
 use std::{
     env, fs,
@@ -11,7 +12,7 @@ use std::{
 
 fn usage() {
     eprintln!(
-        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|ti|web]\n  kalcite build-app FILE.klc --target numworks|desktop|ti [-o OUTPUT] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite build-ti FILE.klc [-o GAME.8xp] [--name NAME] [--no-build]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME SOURCE [REVISION] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|ti|web]"
+        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR] [--target TARGET] [--profile cli|ui|game2d|embedded|wasm] [--report]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|ti|web] [--profile cli|ui|game2d|embedded|wasm] [--report]\n  kalcite ui-settings [DIR] [--title TITLE] [--width N] [--height N]\n  kalcite build-app FILE.klc --target numworks|desktop|ti [-o OUTPUT] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite build-ti FILE.klc [-o GAME.8xp] [--name NAME] [--no-build]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME SOURCE [REVISION] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|ti|web]"
     );
 }
 
@@ -25,6 +26,7 @@ fn main() -> ExitCode {
         "init" => init_command(&args[2..]),
         "project-check" => project_command(&args[2..], false),
         "project-build" => project_command(&args[2..], true),
+        "ui-settings" => ui_settings_command(&args[2..]),
         "build-nwa" => build_nwa_command(&args[2..]),
         "build-ti" => build_ti_command(&args[2..]),
         "build-app" => build_app_command(&args[2..]),
@@ -39,6 +41,64 @@ fn main() -> ExitCode {
         "test" => test_command(&args[2..]),
         "run" => run_command(&args[2..]),
         _ => file_command(command, &args[2..]),
+    }
+}
+
+/// Generate the first independently resizable desktop UI sample. It is kept
+/// separate from `run`, whose fixed RGB565 viewport remains the game path.
+fn ui_settings_command(args: &[String]) -> ExitCode {
+    let root = args
+        .first()
+        .filter(|argument| !argument.starts_with('-'))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(".kalcite/ui-settings"));
+    let mut options = kalcite_backend_desktop::UiSurfaceOptions::default();
+    let mut index = usize::from(
+        args.first()
+            .is_some_and(|argument| !argument.starts_with('-')),
+    );
+    while index < args.len() {
+        let option = &args[index];
+        let value = args.get(index + 1);
+        match (option.as_str(), value) {
+            ("--title", Some(value)) => options.title = value.clone(),
+            ("--width", Some(value)) => match value.parse() {
+                Ok(width) => options.initial_width = width,
+                Err(_) => {
+                    eprintln!("invalid UI width `{value}`");
+                    return ExitCode::FAILURE;
+                }
+            },
+            ("--height", Some(value)) => match value.parse() {
+                Ok(height) => options.initial_height = height,
+                Err(_) => {
+                    eprintln!("invalid UI height `{value}`");
+                    return ExitCode::FAILURE;
+                }
+            },
+            _ => {
+                eprintln!("unknown or incomplete ui-settings option `{option}`");
+                return ExitCode::FAILURE;
+            }
+        }
+        index += 2;
+    }
+    match kalcite_backend_desktop::emit_ui_settings_project(&root, &options) {
+        Ok(()) => {
+            println!(
+                "generated resizable UI Settings sample in {}",
+                root.display()
+            );
+            println!(
+                "next: cargo run --manifest-path {}/Cargo.toml",
+                root.display()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("UI sample generation failed: {error}");
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -892,19 +952,42 @@ fn test_command(args: &[String]) -> ExitCode {
     };
     let mut failed = 0;
     for case in &cases {
-        let src = match fs::read_to_string(case) {
+        let path = &case.path;
+        let src = match fs::read_to_string(path) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("FAIL {case}: {e}");
+                eprintln!("FAIL {}: {e}", path.display());
                 failed += 1;
                 continue;
             }
         };
-        match kalcite_compiler::check(&src) {
-            Ok(_) => println!("PASS {case}"),
-            Err(e) => {
-                eprintln!("FAIL {case}: {e}");
-                failed += 1
+        match (&case.expectation, kalcite_compiler::check(&src)) {
+            (kalcite_test_runner::Expectation::Pass, Ok(_)) => {
+                println!("PASS {}", path.display());
+            }
+            (kalcite_test_runner::Expectation::Pass, Err(error)) => {
+                eprintln!("FAIL {}: {error}", path.display());
+                failed += 1;
+            }
+            (kalcite_test_runner::Expectation::Error { contains }, Err(error)) => {
+                let error = error.to_string();
+                if contains
+                    .as_ref()
+                    .is_none_or(|fragment| error.contains(fragment))
+                {
+                    println!("PASS {} (expected error)", path.display());
+                } else {
+                    eprintln!(
+                        "FAIL {}: expected diagnostic containing `{}`, got: {error}",
+                        path.display(),
+                        contains.as_deref().unwrap_or_default()
+                    );
+                    failed += 1;
+                }
+            }
+            (kalcite_test_runner::Expectation::Error { .. }, Ok(_)) => {
+                eprintln!("FAIL {}: expected compilation to fail", path.display());
+                failed += 1;
             }
         }
     }
@@ -1227,6 +1310,112 @@ fn compile_project_resources(
     ))
 }
 
+/// Collect only artifact sizes that have already been produced by the project
+/// pipeline. Native executable size and stack usage are intentionally omitted:
+/// neither is known until a target linker and stack analysis run.
+fn build_project_report(
+    manifest: &kalcite_project::ProjectManifest,
+    index: &kalcite_project::ProjectIndex,
+    scenes: &[(PathBuf, kalcite_scene::Scene)],
+    assets: &[kalcite_assets::AssetEntry],
+) -> Result<ProjectReport, String> {
+    let compiled_scene_bytes = scenes.iter().try_fold(0usize, |total, (_, scene)| {
+        let encoded = kalcite_scene::try_encode_compiled(scene)?;
+        Ok::<_, String>(total + encoded.len())
+    })?;
+    let asset_pack = kalcite_assets::encode_pack(assets);
+    let assets = AssetReport {
+        entries: assets.len(),
+        payload_bytes: assets.iter().map(|asset| asset.data.len()).sum(),
+        packed_bytes: asset_pack.len(),
+    };
+    let scene_values = scenes.iter().map(|(_, scene)| scene).collect::<Vec<_>>();
+    Ok(ProjectReport::from_project(
+        manifest,
+        index,
+        &scene_values,
+        compiled_scene_bytes,
+        assets,
+    ))
+}
+
+fn format_capabilities(capabilities: &[String]) -> String {
+    if capabilities.is_empty() {
+        "none".into()
+    } else {
+        capabilities.join(", ")
+    }
+}
+
+/// Render a stable, human-readable report. The labels distinguish exact
+/// artifact measurements from work that still needs a target-specific pass.
+fn format_project_report(report: &ProjectReport) -> String {
+    use std::fmt::Write;
+
+    let mut output = String::from("build report:\n");
+    let _ = writeln!(output, "  profile: {}", report.profile);
+    let _ = writeln!(output, "  target: {}", report.target);
+    let _ = writeln!(
+        output,
+        "  required capabilities: {}",
+        format_capabilities(&report.required_capabilities)
+    );
+    let _ = writeln!(
+        output,
+        "  provided capabilities: {}",
+        format_capabilities(&report.provided_capabilities)
+    );
+    let _ = writeln!(output, "  active fallbacks: none");
+    let _ = writeln!(output, "  scripts: {}", report.script_count);
+    let _ = writeln!(output, "  global classes: {}", report.global_class_count);
+    let _ = writeln!(output, "  scenes: {}", report.scene_count);
+    let _ = writeln!(output, "  scene nodes: {}", report.scene_node_count);
+    let _ = writeln!(
+        output,
+        "  scene connections: {}",
+        report.scene_connection_count
+    );
+    let _ = writeln!(output, "  scene autoloads: {}", report.scene_autoload_count);
+    let _ = writeln!(output, "  assets: {}", report.assets.entries);
+    let _ = writeln!(
+        output,
+        "  asset payload: {} bytes",
+        report.assets.payload_bytes
+    );
+    let _ = writeln!(
+        output,
+        "  compiled scenes: {} bytes",
+        report.compiled_scene_bytes
+    );
+    let _ = writeln!(output, "  asset pack: {} bytes", report.assets.packed_bytes);
+    let _ = writeln!(
+        output,
+        "  known static project data: {} bytes",
+        report.known_static_data_bytes()
+    );
+    let _ = writeln!(
+        output,
+        "  declared pool capacity: {} instances",
+        report.total_pool_capacity()
+    );
+    for pool in &report.pools {
+        let _ = writeln!(
+            output,
+            "    {}: {} instances",
+            pool.class_name, pool.capacity
+        );
+    }
+    let _ = writeln!(
+        output,
+        "  native artifact size: unavailable (not linked by project-build)"
+    );
+    let _ = writeln!(
+        output,
+        "  stack estimate: unavailable (target stack analysis is planned)"
+    );
+    output
+}
+
 fn project_command(args: &[String], build: bool) -> ExitCode {
     let start = args
         .first()
@@ -1237,13 +1426,29 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
         eprintln!("no kalcite.toml found from {}", start.display());
         return ExitCode::FAILURE;
     };
-    let manifest = match load_manifest(&root) {
+    let mut manifest = match load_manifest(&root) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("manifest error: {e:?}");
             return ExitCode::FAILURE;
         }
     };
+    if let Some(target) = option_value(args, "--target") {
+        manifest.target = target.to_owned();
+    }
+    if let Some(profile) = option_value(args, "--profile") {
+        manifest.profile = profile.to_owned();
+    }
+    let manifest_diagnostics = validate_manifest(&manifest);
+    for diagnostic in &manifest_diagnostics {
+        eprintln!(
+            "manifest: error[{}]: {}",
+            diagnostic.code, diagnostic.message
+        );
+    }
+    if !manifest_diagnostics.is_empty() {
+        return ExitCode::FAILURE;
+    }
     let index = match discover(&root, &manifest) {
         Ok(v) => v,
         Err(e) => {
@@ -1314,6 +1519,17 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let report = if args.iter().any(|argument| argument == "--report") {
+        match build_project_report(&manifest, &index, &scenes, &assets) {
+            Ok(report) => Some(report),
+            Err(error) => {
+                eprintln!("build report: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        None
+    };
     let input_path = root.join(&manifest.input_map);
     if input_path.is_file() {
         match fs::read_to_string(&input_path)
@@ -1356,13 +1572,25 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
             relative(&root, &save_path).display()
         );
     }
+    let required_capabilities = required_capabilities(&manifest);
+    let capabilities = if required_capabilities.is_empty() {
+        "none".to_string()
+    } else {
+        required_capabilities.join(", ")
+    };
     println!(
-        "ok: {} scripts, {} global classes, {} scene nodes, {} assets",
+        "ok: profile `{}`, target `{}`, required capabilities: {}, {} scripts, {} global classes, {} scene nodes, {} assets",
+        manifest.profile,
+        manifest.target,
+        capabilities,
         index.scripts.len(),
         index.symbols.len(),
         scene.nodes.len(),
         assets.len()
     );
+    if let Some(report) = &report {
+        print!("{}", format_project_report(report));
+    }
     if !build {
         return ExitCode::SUCCESS;
     }
@@ -1551,7 +1779,10 @@ fn file_command(command: &str, args: &[String]) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_numworks_name, default_ti_name};
+    use super::{
+        default_numworks_name, default_ti_name, format_project_report, ui_settings_command,
+    };
+    use kalcite_project::{AssetReport, ProjectReport};
 
     #[test]
     fn numworks_default_name_is_ascii_and_bounded() {
@@ -1564,6 +1795,42 @@ mod tests {
     fn ti_default_name_is_alphanumeric_uppercase_and_bounded() {
         assert_eq!(default_ti_name("Game Project!"), "GAMEPROJ");
         assert_eq!(default_ti_name("🎮"), "KALCITE");
+    }
+
+    #[test]
+    fn build_report_labels_measurements_and_unavailable_analysis() {
+        let report = ProjectReport {
+            profile: "ui".into(),
+            target: "desktop".into(),
+            required_capabilities: vec!["keyboard".into(), "window".into()],
+            provided_capabilities: vec!["window".into(), "keyboard".into()],
+            script_count: 2,
+            global_class_count: 2,
+            scene_count: 1,
+            scene_node_count: 3,
+            scene_connection_count: 1,
+            scene_autoload_count: 0,
+            compiled_scene_bytes: 32,
+            assets: AssetReport {
+                entries: 1,
+                payload_bytes: 16,
+                packed_bytes: 24,
+            },
+            pools: vec![],
+        };
+
+        let output = format_project_report(&report);
+        assert!(output.contains("profile: ui"));
+        assert!(output.contains("known static project data: 56 bytes"));
+        assert!(output.contains("native artifact size: unavailable"));
+        assert!(output.contains("stack estimate: unavailable"));
+    }
+
+    #[test]
+    fn ui_settings_rejects_small_surface() {
+        let root = std::env::temp_dir().join(format!("kalcite-ui-cli-{}", std::process::id()));
+        let args = vec![root.display().to_string(), "--width".into(), "100".into()];
+        assert_eq!(ui_settings_command(&args), std::process::ExitCode::FAILURE);
     }
 }
 
@@ -1582,6 +1849,11 @@ fn parse_target_option(args: &[String]) -> Option<Target> {
         .map(|w| target_from_name(&w[1]))
 }
 
+fn option_value<'a>(args: &'a [String], option: &str) -> Option<&'a str> {
+    args.windows(2)
+        .find(|pair| pair[0] == option)
+        .map(|pair| pair[1].as_str())
+}
 fn relative<'a>(root: &'a Path, path: &'a Path) -> &'a Path {
     path.strip_prefix(root).unwrap_or(path)
 }
