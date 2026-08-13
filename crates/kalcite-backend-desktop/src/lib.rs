@@ -6,6 +6,7 @@ pub enum Error {
     Io(std::io::Error),
     NoScene,
     Rust(kalcite_backend_rust::EmitError),
+    InvalidUiSurfaceSize { width: usize, height: usize },
 }
 impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
@@ -18,6 +19,10 @@ impl core::fmt::Display for Error {
             Self::Io(e) => write!(f, "{e}"),
             Self::NoScene => write!(f, "no @scene class found"),
             Self::Rust(e) => write!(f, "{e}"),
+            Self::InvalidUiSurfaceSize { width, height } => write!(
+                f,
+                "UI surface must be at least 320x240 pixels, received {width}x{height}"
+            ),
         }
     }
 }
@@ -85,6 +90,49 @@ pub fn emit_project_with_resources(
     Ok(())
 }
 
+/// Options for the small native desktop UI runner.
+///
+/// This runner intentionally owns a resizable pixel surface in window
+/// coordinates. It does not scale the fixed 320x240 game framebuffer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UiSurfaceOptions {
+    pub title: String,
+    pub initial_width: usize,
+    pub initial_height: usize,
+}
+
+impl Default for UiSurfaceOptions {
+    fn default() -> Self {
+        Self {
+            title: "Kalcite Settings".into(),
+            initial_width: 720,
+            initial_height: 520,
+        }
+    }
+}
+
+/// Emit a self-contained settings application that exercises the first UI
+/// surface: resizable layout, focus navigation, a button, and a bounded text
+/// field. It deliberately does not depend on a game scene or framebuffer.
+pub fn emit_ui_settings_project(root: &Path, options: &UiSurfaceOptions) -> Result<(), Error> {
+    if options.initial_width < 320 || options.initial_height < 240 {
+        return Err(Error::InvalidUiSurfaceSize {
+            width: options.initial_width,
+            height: options.initial_height,
+        });
+    }
+    fs::create_dir_all(root.join("src"))?;
+    fs::write(root.join("Cargo.toml"), ui_cargo_manifest(&options.title))?;
+    fs::write(
+        root.join("src/main.rs"),
+        UI_MAIN
+            .replace("__APP_NAME__", &escape_rust_string(&options.title))
+            .replace("__INITIAL_WIDTH__", &options.initial_width.to_string())
+            .replace("__INITIAL_HEIGHT__", &options.initial_height.to_string()),
+    )?;
+    Ok(())
+}
+
 fn write_project_data(
     root: &Path,
     scene: Option<&[u8]>,
@@ -138,8 +186,125 @@ strip = "symbols"
     )
 }
 
+fn ui_cargo_manifest(name: &str) -> String {
+    format!(
+        r#"[package]
+name = "kalcite-ui-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "Generated Kalcite UI sample: {name}"
+
+[dependencies]
+minifb = "0.27"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[workspace]
+"#
+    )
+}
+
 const RUNTIME: &str = include_str!("../../kalcite-runtime-core/src/pool.rs");
 const ASSET_RUNTIME: &str = include_str!("../../kalcite-engine-assets/src/lib.rs");
+
+// Kept separate from `MAIN`: this sample owns a variable-size desktop canvas;
+// the game runner below continues to use its fixed 320x240 logical viewport.
+const UI_MAIN: &str = r#"use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
+
+const TITLE: &str = "__APP_NAME__";
+const INITIAL_WIDTH: usize = __INITIAL_WIDTH__;
+const INITIAL_HEIGHT: usize = __INITIAL_HEIGHT__;
+
+#[derive(Clone, Copy)]
+struct Rect { x: usize, y: usize, width: usize, height: usize }
+impl Rect {
+    fn contains(self, x: usize, y: usize) -> bool {
+        x >= self.x && y >= self.y && x < self.x + self.width && y < self.y + self.height
+    }
+}
+
+#[derive(Default)]
+struct Settings { dark_mode: bool, name: String, focus: u8 }
+
+fn fill(buffer: &mut [u32], width: usize, rect: Rect, color: u32) {
+    let height = buffer.len() / width;
+    let x_end = (rect.x + rect.width).min(width);
+    let y_end = (rect.y + rect.height).min(height);
+    for y in rect.y.min(height)..y_end { buffer[y * width + rect.x.min(width)..y * width + x_end].fill(color); }
+}
+
+fn border(buffer: &mut [u32], width: usize, rect: Rect, color: u32) {
+    fill(buffer, width, Rect { height: 1, ..rect }, color);
+    fill(buffer, width, Rect { y: rect.y + rect.height.saturating_sub(1), height: 1, ..rect }, color);
+    fill(buffer, width, Rect { width: 1, ..rect }, color);
+    fill(buffer, width, Rect { x: rect.x + rect.width.saturating_sub(1), width: 1, ..rect }, color);
+}
+
+fn glyph(ch: char) -> [u8; 5] {
+    match ch.to_ascii_uppercase() {
+        'A'=>[2,5,7,5,5], 'B'=>[6,5,6,5,6], 'C'=>[3,4,4,4,3], 'D'=>[6,5,5,5,6],
+        'E'=>[7,4,6,4,7], 'F'=>[7,4,6,4,4], 'G'=>[3,4,5,5,3], 'H'=>[5,5,7,5,5],
+        'I'=>[7,2,2,2,7], 'J'=>[1,1,1,5,2], 'K'=>[5,5,6,5,5], 'L'=>[4,4,4,4,7],
+        'M'=>[5,7,7,5,5], 'N'=>[5,7,7,7,5], 'O'=>[2,5,5,5,2], 'P'=>[6,5,6,4,4],
+        'Q'=>[2,5,5,7,3], 'R'=>[6,5,6,5,5], 'S'=>[3,4,2,1,6], 'T'=>[7,2,2,2,2],
+        'U'=>[5,5,5,5,7], 'V'=>[5,5,5,5,2], 'W'=>[5,5,7,7,5], 'X'=>[5,5,2,5,5],
+        'Y'=>[5,5,2,2,2], 'Z'=>[7,1,2,4,7], '0'=>[7,5,5,5,7], '1'=>[2,6,2,2,7],
+        '2'=>[6,1,7,4,7], '3'=>[6,1,3,1,6], '4'=>[5,5,7,1,1], '5'=>[7,4,7,1,6],
+        '6'=>[3,4,7,5,7], '7'=>[7,1,2,2,2], '8'=>[7,5,7,5,7], '9'=>[7,5,7,1,6],
+        _=>[0,0,0,0,0],
+    }
+}
+
+fn text(buffer: &mut [u32], width: usize, x: usize, y: usize, value: &str, color: u32) {
+    for (index, ch) in value.chars().enumerate() {
+        for (row, bits) in glyph(ch).into_iter().enumerate() {
+            for column in 0..3 { if bits & (1 << (2 - column)) != 0 {
+                let px = x + index * 4 + column; let py = y + row;
+                if px < width && py < buffer.len() / width { buffer[py * width + px] = color; }
+            }}
+        }
+    }
+}
+
+fn key_char(key: Key) -> Option<char> {
+    Some(match key {
+        Key::A=>'A',Key::B=>'B',Key::C=>'C',Key::D=>'D',Key::E=>'E',Key::F=>'F',Key::G=>'G',Key::H=>'H',Key::I=>'I',Key::J=>'J',Key::K=>'K',Key::L=>'L',Key::M=>'M',Key::N=>'N',Key::O=>'O',Key::P=>'P',Key::Q=>'Q',Key::R=>'R',Key::S=>'S',Key::T=>'T',Key::U=>'U',Key::V=>'V',Key::W=>'W',Key::X=>'X',Key::Y=>'Y',Key::Z=>'Z',Key::Key0=>'0',Key::Key1=>'1',Key::Key2=>'2',Key::Key3=>'3',Key::Key4=>'4',Key::Key5=>'5',Key::Key6=>'6',Key::Key7=>'7',Key::Key8=>'8',Key::Key9=>'9',Key::Space=>' ', _=>return None,
+    })
+}
+
+fn main() {
+    let mut window = Window::new(TITLE, INITIAL_WIDTH, INITIAL_HEIGHT, WindowOptions { resize: true, ..WindowOptions::default() }).expect("unable to create UI window");
+    window.set_target_fps(60);
+    let mut settings = Settings { name: "ADA".into(), ..Settings::default() };
+    let mut previous_mouse = false;
+    while window.is_open() && !window.is_key_down(Key::Escape) {
+        let (width, height) = window.get_size();
+        let mut buffer = vec![if settings.dark_mode { 0x15181e } else { 0xf4f6fa }; width * height];
+        let card_width = width.saturating_sub(48).min(480); let card_x = (width - card_width) / 2;
+        let card = Rect { x: card_x, y: 36, width: card_width, height: height.saturating_sub(72).max(250) };
+        let toggle = Rect { x: card.x + 24, y: card.y + 92, width: card.width.saturating_sub(48), height: 38 };
+        let input = Rect { x: card.x + 24, y: card.y + 166, width: card.width.saturating_sub(48), height: 38 };
+        let panel = if settings.dark_mode { 0x242936 } else { 0xffffff }; let ink = if settings.dark_mode { 0xf2f4f8 } else { 0x20242c }; let accent = 0x4c78ff;
+        fill(&mut buffer, width, card, panel); border(&mut buffer, width, card, if settings.dark_mode { 0x3b4354 } else { 0xd5dbe7 });
+        text(&mut buffer, width, card.x + 24, card.y + 24, "SETTINGS", ink); text(&mut buffer, width, card.x + 24, card.y + 48, "A RESIZABLE KALCITE UI SURFACE", ink);
+        fill(&mut buffer, width, toggle, if settings.dark_mode { accent } else { 0xe7ebf3 }); border(&mut buffer, width, toggle, if settings.focus == 0 { accent } else { 0x9ca9bd });
+        text(&mut buffer, width, toggle.x + 12, toggle.y + 15, if settings.dark_mode { "DARK MODE ENABLED" } else { "DARK MODE DISABLED" }, ink);
+        text(&mut buffer, width, input.x, input.y.saturating_sub(12), "USER NAME", ink); fill(&mut buffer, width, input, panel); border(&mut buffer, width, input, if settings.focus == 1 { accent } else { 0x9ca9bd }); text(&mut buffer, width, input.x + 12, input.y + 15, &settings.name, ink);
+        text(&mut buffer, width, card.x + 24, card.y + 228, "TAB CHANGES FOCUS. ENTER TO TOGGLE.", ink);
+        let mouse = window.get_mouse_pos(MouseMode::Discard).map(|(x,y)| (x as usize,y as usize)); let mouse_down = window.get_mouse_down(MouseButton::Left);
+        if mouse_down && !previous_mouse { if let Some((x,y)) = mouse { if toggle.contains(x,y) { settings.dark_mode = !settings.dark_mode; settings.focus = 0; } else if input.contains(x,y) { settings.focus = 1; } } }
+        previous_mouse = mouse_down;
+        if window.is_key_pressed(Key::Tab, KeyRepeat::No) { settings.focus = (settings.focus + 1) % 2; }
+        if settings.focus == 0 && (window.is_key_pressed(Key::Enter, KeyRepeat::No) || window.is_key_pressed(Key::Space, KeyRepeat::No)) { settings.dark_mode = !settings.dark_mode; }
+        if settings.focus == 1 { for key in window.get_keys_pressed(KeyRepeat::Yes) { if key == Key::Backspace { settings.name.pop(); } else if let Some(ch) = key_char(key) { if settings.name.len() < 24 { settings.name.push(ch); } } } }
+        window.update_with_buffer(&buffer, width, height).expect("failed to present UI frame");
+    }
+}
+"#;
 
 const PLATFORM: &str = r#"#![allow(dead_code)]
 use core::ops::{Add, AddAssign, Sub, SubAssign};
@@ -632,6 +797,41 @@ mod generated_module_regression_tests {
     fn desktop_runner_exposes_csv_profiling() {
         assert!(MAIN.contains("--profile"));
         assert!(MAIN.contains("frame,frame_us,update_us,render_us,physics_us"));
+    }
+
+    #[test]
+    fn ui_runner_is_resizable_and_independent_from_the_game_framebuffer() {
+        let root = std::env::temp_dir().join(format!(
+            "kalcite-ui-surface-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let options = UiSurfaceOptions::default();
+        emit_ui_settings_project(&root, &options).unwrap();
+        let main = std::fs::read_to_string(root.join("src/main.rs")).unwrap();
+        assert!(main.contains("resize: true"));
+        assert!(main.contains("window.get_size()"));
+        assert!(main.contains("DARK MODE ENABLED"));
+        assert!(main.contains("USER NAME"));
+        assert!(!main.contains("platform::WIDTH"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ui_runner_rejects_a_surface_too_small_for_its_controls() {
+        let root = std::env::temp_dir().join("kalcite-ui-surface-too-small");
+        let options = UiSurfaceOptions {
+            initial_width: 319,
+            initial_height: 240,
+            ..UiSurfaceOptions::default()
+        };
+        assert!(matches!(
+            emit_ui_settings_project(&root, &options),
+            Err(Error::InvalidUiSurfaceSize { .. })
+        ));
     }
 
     #[test]
