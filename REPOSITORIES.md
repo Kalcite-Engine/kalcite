@@ -9,7 +9,7 @@ Les extensions d’éditeur, la grammaire Tree-sitter et les exemples complets s
 ## Après publication des dépôts
 
 ```bash
-git submodule add https://github.com/kalcite-lang/kalcite-syntax crates/kalcite-syntax
+git submodule add https://github.com/Kalcite-Engine/kalcite-syntax crates/kalcite-syntax
 # répéter pour chaque projet, puis :
 git submodule update --init --recursive
 ```
