@@ -355,6 +355,7 @@ name = "kalcite-cli"
 version = "0.14.0"
 dependencies = [
  "kalcite-assets",
+ "kalcite-backend-desktop",
  "kalcite-compiler",
  "kalcite-input",
  "kalcite-linter",
