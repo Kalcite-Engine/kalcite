@@ -183,6 +183,16 @@ pub fn profile_capabilities(profile: &str) -> &'static [&'static str] {
     }
 }
 
+/// Return the complete, sorted capability contract for a project. Profile
+/// baselines and explicitly requested services are intentionally both shown:
+/// this makes build output explain *why* an adapter is needed.
+pub fn required_capabilities(manifest: &ProjectManifest) -> Vec<&str> {
+    let mut capabilities = BTreeSet::new();
+    capabilities.extend(profile_capabilities(&manifest.profile).iter().copied());
+    capabilities.extend(manifest.capabilities.iter().map(String::as_str));
+    capabilities.into_iter().collect()
+}
+
 fn is_known_target(target: &str) -> bool {
     matches!(target, "portable" | "numworks" | "desktop" | "web")
 }
@@ -957,6 +967,20 @@ mod tests {
         };
         let diagnostics = validate_manifest(&manifest);
         assert!(diagnostics.iter().any(|item| item.code == "KLC2005"));
+    }
+
+    #[test]
+    fn required_capabilities_combine_profile_and_manifest_requirements() {
+        let manifest = ProjectManifest {
+            target: "desktop".into(),
+            profile: "ui".into(),
+            capabilities: vec!["clipboard".into(), "keyboard".into()],
+            ..ProjectManifest::default()
+        };
+        assert_eq!(
+            required_capabilities(&manifest),
+            vec!["clipboard", "keyboard", "window"]
+        );
     }
 
     #[test]

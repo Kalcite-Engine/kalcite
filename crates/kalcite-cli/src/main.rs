@@ -1,8 +1,8 @@
 use kalcite_linter::{Severity, has_errors, lint};
 use kalcite_object::Target;
 use kalcite_project::{
-    discover, discover_scenes, find_root, init_project, load_manifest, validate, validate_manifest,
-    validate_scene,
+    discover, discover_scenes, find_root, init_project, load_manifest, required_capabilities,
+    validate, validate_manifest, validate_scene,
 };
 use std::{
     env, fs,
@@ -1202,10 +1202,17 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
             relative(&root, &save_path).display()
         );
     }
+    let required_capabilities = required_capabilities(&manifest);
+    let capabilities = if required_capabilities.is_empty() {
+        "none".to_string()
+    } else {
+        required_capabilities.join(", ")
+    };
     println!(
-        "ok: profile `{}`, target `{}`, {} scripts, {} global classes, {} scene nodes, {} assets",
+        "ok: profile `{}`, target `{}`, required capabilities: {}, {} scripts, {} global classes, {} scene nodes, {} assets",
         manifest.profile,
         manifest.target,
+        capabilities,
         index.scripts.len(),
         index.symbols.len(),
         scene.nodes.len(),
