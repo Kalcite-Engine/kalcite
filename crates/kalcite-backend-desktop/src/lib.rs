@@ -58,16 +58,16 @@ pub fn emit_project_with_resources(
         root.join("src/game.rs"),
         kalcite_backend_rust::emit_game(program).map_err(Error::Rust)?,
     )?;
-    let has_update = scene_runtime.is_some()
-        || scene
-            .functions
-            .iter()
-            .any(|function| function.name == "update");
-    let has_draw = scene_runtime.is_some()
-        || scene
-            .functions
-            .iter()
-            .any(|function| function.name == "draw");
+    let update_hook = if scene_runtime.is_some() {
+        Some("Update")
+    } else {
+        lifecycle_name(scene, "Update", "update")
+    };
+    let draw_hook = if scene_runtime.is_some() {
+        Some("Draw")
+    } else {
+        lifecycle_name(scene, "Draw", "draw")
+    };
     let root_type = if scene_runtime.is_some() {
         "scene_runtime::SceneRuntime".to_string()
     } else {
@@ -78,11 +78,37 @@ pub fn emit_project_with_resources(
         .replace("__APP_NAME__", &escape_rust_string(app_name))
         .replace(
             "__UPDATE_CALL__",
-            if has_update { "game.update();" } else { "" },
+            &update_hook
+                .map(|hook| format!("game.{hook}();"))
+                .unwrap_or_default(),
         )
-        .replace("__DRAW_CALL__", if has_draw { "game.draw();" } else { "" });
+        .replace(
+            "__DRAW_CALL__",
+            &draw_hook
+                .map(|hook| format!("game.{hook}();"))
+                .unwrap_or_default(),
+        );
     fs::write(root.join("src/main.rs"), main)?;
     Ok(())
+}
+
+fn lifecycle_name<'a>(
+    scene: &'a kalcite_mir::Class,
+    canonical: &'a str,
+    legacy: &'a str,
+) -> Option<&'a str> {
+    scene
+        .functions
+        .iter()
+        .any(|function| function.name == canonical)
+        .then_some(canonical)
+        .or_else(|| {
+            scene
+                .functions
+                .iter()
+                .any(|function| function.name == legacy)
+                .then_some(legacy)
+        })
 }
 
 fn write_project_data(
@@ -216,6 +242,8 @@ pub struct Physics;
 impl Physics {
     #[inline] pub fn hit(ax:i16,ay:i16,aw:i16,ah:i16,bx:i16,by:i16,bw:i16,bh:i16)->bool{COLLISION_QUERIES.fetch_add(1,Ordering::Relaxed);ax<bx.saturating_add(bw)&&ax.saturating_add(aw)>bx&&ay<by.saturating_add(bh)&&ay.saturating_add(ah)>by}
     #[inline] pub fn move_x(x:i16,y:i16,w:i16,h:i16,dx:i16,sx:i16,sy:i16,sw:i16,sh:i16)->i16{let started=Instant::now();let next=x.saturating_add(dx);let out=if Self::hit(next,y,w,h,sx,sy,sw,sh){x}else{next};PHYSICS_NS.fetch_add(started.elapsed().as_nanos().min(u64::MAX as u128)as u64,Ordering::Relaxed);out}
+    #[inline] pub fn move_y(x:i16,y:i16,w:i16,h:i16,dy:i16,sx:i16,sy:i16,sw:i16,sh:i16)->i16{let started=Instant::now();let next=y.saturating_add(dy);let out=if Self::hit(x,next,w,h,sx,sy,sw,sh){y}else{next};PHYSICS_NS.fetch_add(started.elapsed().as_nanos().min(u64::MAX as u128)as u64,Ordering::Relaxed);out}
+    #[inline] pub fn circle_hit(ax:i16,ay:i16,ar:i16,bx:i16,by:i16,br:i16)->bool{COLLISION_QUERIES.fetch_add(1,Ordering::Relaxed);let dx=i64::from(bx)-i64::from(ax);let dy=i64::from(by)-i64::from(ay);let rr=i64::from(ar.max(0).saturating_add(br.max(0)));dx*dx+dy*dy<rr*rr}
 }
 
 static AUDIO_TONES: AtomicU32 = AtomicU32::new(0);
@@ -327,6 +355,14 @@ impl Draw {
         let mut fb=framebuffer().lock().unwrap();
         for yy in y0..y1 { let row=yy*WIDTH; for xx in x0..x1 { fb[row+xx]=c.0; } }
     }
+    pub fn circle(cx:i16,cy:i16,r:i16,c:Color) {
+        if r<=0{return;}let rr=i32::from(r)*i32::from(r);for dy in -r..=r{let yy=i32::from(dy);let mut dx=r;while dx>0&&i32::from(dx)*i32::from(dx)+yy*yy>rr{dx-=1;}Self::rect(cx.saturating_sub(dx),cy.saturating_add(dy),dx.saturating_mul(2).saturating_add(1),1,c);}
+    }
+    pub fn line(x0:i16,y0:i16,x1:i16,y1:i16,c:Color) {
+        let (x0,y0)=world_to_screen(x0,y0);let (x1,y1)=world_to_screen(x1,y1);
+        let dx=(x1-x0).abs();let sx=if x0<x1{1}else{-1};let dy=-(y1-y0).abs();let sy=if y0<y1{1}else{-1};let mut err=dx+dy;let(mut x,mut y)=(x0,y0);let mut fb=framebuffer().lock().unwrap();
+        loop { if x>=0&&y>=0&&x<WIDTH as i16&&y<HEIGHT as i16{fb[y as usize*WIDTH+x as usize]=c.0;} if x==x1&&y==y1{break;}let twice=err.saturating_mul(2);if twice>=dy{err+=dy;x+=sx;}if twice<=dx{err+=dx;y+=sy;} }
+    }
     pub fn sprite(name:&str,x:i16,y:i16) {
         let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK) else{return;};
         let Some(asset)=pack.get_named(name) else{return;};
@@ -364,6 +400,11 @@ impl Draw {
             draw_char(b,px,y,c,bg); px+=6;
         }
     }
+    pub fn glow(cx:i16,cy:i16,r:u16,c:Color,energy:u16) {
+        if r==0{return;}let (cx,cy)=world_to_screen(cx,cy);let radius=i32::from(r);let rr=radius*radius;let alpha_max=i32::from(energy.min(100))*255/100;let src=c.0;let sr=((src>>11)&31)as i32;let sg=((src>>5)&63)as i32;let sb=(src&31)as i32;let mut fb=framebuffer().lock().unwrap();
+        let cx=i32::from(cx);let cy=i32::from(cy);for y in (cy-radius).max(0)..=(cy+radius).min(HEIGHT as i32-1){for x in (cx-radius).max(0)..=(cx+radius).min(WIDTH as i32-1){let dx=x-cx;let dy=y-cy;let d=dx*dx+dy*dy;if d>rr{continue;}let a=alpha_max*(rr-d)/rr;let at=y as usize*WIDTH+x as usize;let dst=fb[at];let dr=((dst>>11)&31)as i32;let dg=((dst>>5)&63)as i32;let db=(dst&31)as i32;let nr=(dr*(255-a)+sr*a)/255;let ng=(dg*(255-a)+sg*a)/255;let nb=(db*(255-a)+sb*a)/255;fb[at]=((nr.clamp(0,31)as u16)<<11)|((ng.clamp(0,63)as u16)<<5)|(nb.clamp(0,31)as u16);}}
+    }
+    #[inline] pub fn raytrace_block(x:i16,y:i16,w:i16,h:i16,c:Color){Self::rect(x,y,w,h,c);}
     pub fn number<T: Into<u64> + Copy>(value:T,x:i16,y:i16,c:Color,bg:Color) {
         let mut value:u64=value.into();
         let mut buf=[0u8;10]; let mut n=0usize;

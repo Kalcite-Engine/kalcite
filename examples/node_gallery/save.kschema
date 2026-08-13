@@ -1,0 +1,3 @@
+schema=NodeGallery.State
+version=1
+value=u32

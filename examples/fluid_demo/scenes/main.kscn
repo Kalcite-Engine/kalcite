@@ -1,0 +1,22 @@
+[scene]
+root = "Main"
+
+[node "Main"]
+script = "Main"
+
+[node "Fluid" type="Fluid2D" parent="Main"]
+position = [8, 34]
+width = 304
+height = 198
+particles = 32
+radius = 4
+gravity = 2
+damping = 99
+restitution = 38
+interactive = true
+obstacle_x = 152
+obstacle_y = 118
+obstacle_radius = 20
+obstacle_color = Orange
+color = Cyan
+background = Blue

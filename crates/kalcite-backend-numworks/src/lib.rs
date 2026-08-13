@@ -82,16 +82,16 @@ pub fn emit_project_with_resources(
     let name_len = name.len();
     let name_bytes = name.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
 
-    let has_update = scene_runtime.is_some()
-        || scene
-            .functions
-            .iter()
-            .any(|function| function.name == "update");
-    let has_draw = scene_runtime.is_some()
-        || scene
-            .functions
-            .iter()
-            .any(|function| function.name == "draw");
+    let update_hook = if scene_runtime.is_some() {
+        Some("Update")
+    } else {
+        lifecycle_name(scene, "Update", "update")
+    };
+    let draw_hook = if scene_runtime.is_some() {
+        Some("Draw")
+    } else {
+        lifecycle_name(scene, "Draw", "draw")
+    };
     let root_type = if scene_runtime.is_some() {
         "scene_runtime::SceneRuntime".to_string()
     } else {
@@ -103,11 +103,37 @@ pub fn emit_project_with_resources(
         .replace("__NAME_BYTES__", &name_bytes)
         .replace(
             "__UPDATE_CALL__",
-            if has_update { "game.update();" } else { "" },
+            &update_hook
+                .map(|hook| format!("game.{hook}();"))
+                .unwrap_or_default(),
         )
-        .replace("__DRAW_CALL__", if has_draw { "game.draw();" } else { "" });
+        .replace(
+            "__DRAW_CALL__",
+            &draw_hook
+                .map(|hook| format!("game.{hook}();"))
+                .unwrap_or_default(),
+        );
     fs::write(root.join("src/main.rs"), main)?;
     Ok(())
+}
+
+fn lifecycle_name<'a>(
+    scene: &'a kalcite_mir::Class,
+    canonical: &'a str,
+    legacy: &'a str,
+) -> Option<&'a str> {
+    scene
+        .functions
+        .iter()
+        .any(|function| function.name == canonical)
+        .then_some(canonical)
+        .or_else(|| {
+            scene
+                .functions
+                .iter()
+                .any(|function| function.name == legacy)
+                .then_some(legacy)
+        })
 }
 
 fn write_project_data(
@@ -366,6 +392,8 @@ pub struct Physics;
 impl Physics {
     #[inline] pub fn hit(ax:i16,ay:i16,aw:i16,ah:i16,bx:i16,by:i16,bw:i16,bh:i16)->bool{ax<bx.saturating_add(bw)&&ax.saturating_add(aw)>bx&&ay<by.saturating_add(bh)&&ay.saturating_add(ah)>by}
     #[inline] pub fn move_x(x:i16,y:i16,w:i16,h:i16,dx:i16,sx:i16,sy:i16,sw:i16,sh:i16)->i16{let next=x.saturating_add(dx);if Self::hit(next,y,w,h,sx,sy,sw,sh){x}else{next}}
+    #[inline] pub fn move_y(x:i16,y:i16,w:i16,h:i16,dy:i16,sx:i16,sy:i16,sw:i16,sh:i16)->i16{let next=y.saturating_add(dy);if Self::hit(x,next,w,h,sx,sy,sw,sh){y}else{next}}
+    #[inline] pub fn circle_hit(ax:i16,ay:i16,ar:i16,bx:i16,by:i16,br:i16)->bool{let dx=i64::from(bx)-i64::from(ax);let dy=i64::from(by)-i64::from(ay);let rr=i64::from(ar.max(0).saturating_add(br.max(0)));dx*dx+dy*dy<rr*rr}
 }
 
 static mut AUDIO_COMMANDS:u32=0;
@@ -629,6 +657,11 @@ impl Renderer {
     }
 }
 static mut RENDERER:Renderer=Renderer::new();
+const MAX_RAYTRACE_BLOCKS:usize=6;
+#[derive(Clone,Copy)]struct RaytraceBlock{x:i16,y:i16,w:i16,h:i16,color:u16}
+impl RaytraceBlock{const EMPTY:Self=Self{x:0,y:0,w:0,h:0,color:0};}
+static mut RAYTRACE_BLOCKS:[RaytraceBlock;MAX_RAYTRACE_BLOCKS]=[RaytraceBlock::EMPTY;MAX_RAYTRACE_BLOCKS];
+static mut RAYTRACE_BLOCK_LEN:usize=0;
 static mut CAMERA_X:i16=0;static mut CAMERA_Y:i16=0;
 fn world_to_screen(x:i16,y:i16)->(i16,i16){unsafe{(x.saturating_sub(CAMERA_X),y.saturating_sub(CAMERA_Y))}}
 
@@ -638,6 +671,12 @@ impl Draw {
     #[inline] pub fn begin_frame(){unsafe{RENDERER.begin();}}
     #[inline] pub fn clear(color:Color){unsafe{RENDERER.background=color.0;}}
     pub fn rect(x:i16,y:i16,width:i16,height:i16,color:Color){let b=ClipRect::clipped(x,y,width,height);unsafe{RENDERER.push(DrawCommand{kind:DrawKind::Rect,bounds:b,color:color.0,bg:0,text:[0;64],text_len:0,asset:&[],source:ClipRect::EMPTY,origin_x:0,origin_y:0});}}
+    // EADK's display queue is bounded. Keep one command per particle; the
+    // desktop backend provides the exact filled-circle rasterization.
+    pub fn circle(cx:i16,cy:i16,r:i16,color:Color){if r>0{Self::rect(cx.saturating_sub(r),cy.saturating_sub(r),r.saturating_mul(2).saturating_add(1),r.saturating_mul(2).saturating_add(1),color);}}
+    pub fn line(x0:i16,y0:i16,x1:i16,y1:i16,color:Color){let steps=(x1.saturating_sub(x0).abs().max(y1.saturating_sub(y0).abs())/8).max(1);for step in 0..=steps{let x=x0.saturating_add(x1.saturating_sub(x0).saturating_mul(step)/steps);let y=y0.saturating_add(y1.saturating_sub(y0).saturating_mul(step)/steps);Self::rect(x.saturating_sub(1),y.saturating_sub(1),3,3,color);}}
+    pub fn glow(cx:i16,cy:i16,r:u16,color:Color,energy:u16){let radius=(u16::min(r,120)as i16).saturating_mul(energy.min(100)as i16)/100;for scale in [3i16,2,1]{let size=radius.saturating_mul(scale)/3;if size>0{Self::rect(cx.saturating_sub(size),cy.saturating_sub(size),size.saturating_mul(2),size.saturating_mul(2),color);}}}
+    pub fn raytrace_block(x:i16,y:i16,w:i16,h:i16,color:Color){let b=ClipRect::clipped(x,y,w,h);if b.empty(){return;}unsafe{if RAYTRACE_BLOCK_LEN<MAX_RAYTRACE_BLOCKS{RAYTRACE_BLOCKS[RAYTRACE_BLOCK_LEN]=RaytraceBlock{x:b.x,y:b.y,w:b.w,h:b.h,color:color.0};RAYTRACE_BLOCK_LEN+=1;}}}
     pub fn sprite(name:&str,x:i16,y:i16){let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK)else{return;};let Some(asset)=pack.get_named(name)else{return;};let(x,y)=world_to_screen(x,y);Self::sprite_data(asset.data,x,y,0,0,u16::MAX,u16::MAX);}
     pub fn sprite_region(name:&str,x:i16,y:i16,sx:u16,sy:u16,w:u16,h:u16){let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK)else{return;};let Some(asset)=pack.get_named(name)else{return;};let(x,y)=world_to_screen(x,y);Self::sprite_data(asset.data,x,y,sx,sy,w,h);}
     pub fn sprite_frame(sheet:&str,frame:u16,x:i16,y:i16){let Ok(pack)=crate::project_data::AssetPack::new(&crate::project_data::ASSET_PACK)else{return;};let Some(meta)=pack.get_named(sheet)else{return;};if meta.kind!=3||meta.data.len()!=12{return;}let image=u64::from_le_bytes(meta.data[..8].try_into().unwrap());let fw=u16::from_le_bytes(meta.data[8..10].try_into().unwrap());let fh=u16::from_le_bytes(meta.data[10..12].try_into().unwrap());let Some(sprite)=pack.get(image)else{return;};if sprite.data.len()<4||fw==0||fh==0{return;}let width=u16::from_le_bytes([sprite.data[0],sprite.data[1]]);let cols=width/fw;if cols==0{return;}let(x,y)=world_to_screen(x,y);Self::sprite_data(sprite.data,x,y,(frame%cols)*fw,(frame/cols)*fh,fw,fh);}
@@ -660,7 +699,7 @@ impl Draw {
         unsafe{RENDERER.push(DrawCommand{kind:DrawKind::Text,bounds:b,color:c.0,bg:bg.0,text:buf,text_len:count as u8,asset:&[],source:ClipRect::EMPTY,origin_x:0,origin_y:0});}
     }
     pub fn number<T:Into<u64>+Copy>(value:T,x:i16,y:i16,c:Color,bg:Color){let mut value:u64=value.into();let mut tmp=[0u8;20];let mut n=0usize;if value==0{tmp[0]=b'0';n=1;}else{while value>0&&n<19{tmp[n]=b'0'+(value%10) as u8;value/=10;n+=1;}tmp[..n].reverse();}let s=unsafe{core::str::from_utf8_unchecked(&tmp[..n])};Self::text(s,x,y,c,bg);}
-    #[inline] pub fn present(){unsafe{RENDERER.present();}}
+    #[inline] pub fn present(){unsafe{RENDERER.present();for index in 0..RAYTRACE_BLOCK_LEN{let block=RAYTRACE_BLOCKS[index];eadk::push_rect_uniform(eadk::Rect{x:block.x as u16,y:block.y as u16,width:block.w as u16,height:block.h as u16},block.color);}RAYTRACE_BLOCK_LEN=0;}}
 }
 
 pub struct Time;

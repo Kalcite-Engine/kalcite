@@ -2,6 +2,7 @@ use kalcite_hir as hir;
 
 #[derive(Clone, Debug)]
 pub struct Program {
+    pub constants: Vec<hir::Field>,
     pub classes: Vec<Class>,
     pub functions: Vec<hir::Function>,
     pub scene: Option<usize>,
@@ -15,6 +16,8 @@ pub struct Class {
     pub signals: Vec<hir::Signal>,
     pub functions: Vec<hir::Function>,
     pub pool_capacity: Option<usize>,
+    pub visibility: kalcite_syntax::Visibility,
+    pub base: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -48,9 +51,12 @@ pub fn lower(hir: &hir::Program) -> Program {
             signals: class.signals.clone(),
             functions: class.functions.clone(),
             pool_capacity: class.pool_capacity(),
+            visibility: class.visibility,
+            base: class.base.clone(),
         });
     }
     Program {
+        constants: hir.constants.clone(),
         classes,
         functions: hir.functions.clone(),
         scene,

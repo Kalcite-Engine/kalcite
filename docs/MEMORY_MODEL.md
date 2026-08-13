@@ -7,22 +7,22 @@ Kalcite exposes costs that would normally be hidden by a managed game scripting 
 Fields have concrete sizes at compile time whenever possible. Examples:
 
 ```klc
-var health: u8 = 3;
-var position: Vec2fx;
-var tiles: [u8; 256];
+private u8 health = 3;
+private Vec2fx position;
+private [u8; 256] tiles;
 ```
 
 ## Fixed pools
 
 ```klc
 @pool(32)
-class Bullet extends Entity {
-    var position: Vec2fx;
-    var velocity: Vec2fx;
+public class Bullet extend Entity {
+    public Vec2fx position;
+    public Vec2fx velocity;
 }
 
-var bullets: Pool[Bullet; 32];
-var bullet: Handle[Bullet];
+private Pool[Bullet; 32] bullets;
+private Handle[Bullet] bullet;
 ```
 
 `Pool[T; N]` lowers to `StaticPool<T, N>`. It has no heap fallback. `spawn` returns a typed handle; if the pool is full, the handle is invalid.
@@ -34,8 +34,8 @@ Handles contain a slot index and generation. Reusing a slot increments its gener
 Functions support typed or inferred locals:
 
 ```klc
-var speed: i16 = 2;
-const limit = 100;
+i16 speed = 2;
+const i16 limit = 100;
 ```
 
 They lower to ordinary native stack locals. There is no runtime dictionary of variables.

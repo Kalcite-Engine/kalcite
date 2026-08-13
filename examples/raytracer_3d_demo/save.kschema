@@ -1,0 +1,3 @@
+schema=RayTracer3D.State
+version=1
+value=u32

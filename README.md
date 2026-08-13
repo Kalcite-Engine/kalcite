@@ -98,7 +98,7 @@ cargo run -p kalcite-cli -- emit-rust examples/pong/src/main.klc
 cargo run -p kalcite-cli -- build-app examples/pong/src/main.klc --target numworks --name Pong -o examples/pong/Pong.nwa
 ```
 
-See `docs/COMPILER_PIPELINE.md`, `docs/BACKENDS.md`, and `docs/MEMORY_MODEL.md`.
+See `docs/COMPILER_PIPELINE.md`, `docs/BACKENDS.md`, `docs/MEMORY_MODEL.md`, and `docs/NODES.md`.
 
 
 ## Mémoire bornée
@@ -107,12 +107,12 @@ Le langage expose maintenant les pools et handles directement :
 
 ```klc
 @pool(32)
-class Bullet extends Entity {
-    var position: Vec2fx;
+public class Bullet extend Entity {
+    public Vec2fx position;
 }
 
-var bullets: Pool[Bullet; 32];
-var bullet: Handle[Bullet];
+private Pool[Bullet; 32] bullets;
+private Handle[Bullet] bullet;
 ```
 
 `Pool[T; N]` devient un `StaticPool<T, N>` sans heap. Les handles sont générationnels et rejettent les références périmées. `kalcite emit-mir` affiche aussi une estimation du budget statique.

@@ -1,9 +1,11 @@
+pub use kalcite_syntax::Visibility;
 use kalcite_syntax::{
     Attribute, Class as AstClass, Diagnostic, Item, Member, Module, Span, Token, TokenKind, lex,
 };
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Program {
+    pub constants: Vec<Field>,
     pub classes: Vec<Class>,
     pub functions: Vec<Function>,
 }
@@ -13,6 +15,7 @@ pub struct Class {
     pub path: Vec<String>,
     pub name: String,
     pub attrs: Vec<Attribute>,
+    pub visibility: Visibility,
     pub base: Option<String>,
     pub fields: Vec<Field>,
     pub signals: Vec<Signal>,
@@ -23,6 +26,7 @@ pub struct Class {
 pub struct Signal {
     pub name: String,
     pub params: Vec<Field>,
+    pub visibility: Visibility,
 }
 
 impl Class {
@@ -48,6 +52,7 @@ pub struct Field {
     pub mutable: bool,
     pub init: Option<Expr>,
     pub attrs: Vec<Attribute>,
+    pub visibility: Visibility,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -58,6 +63,7 @@ pub struct Function {
     pub ret: Type,
     pub body: Vec<Stmt>,
     pub attrs: Vec<Attribute>,
+    pub visibility: Visibility,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -173,14 +179,23 @@ pub enum BinaryOp {
 
 pub fn lower(module: &Module) -> Result<Program, Diagnostic> {
     let mut p = Program {
+        constants: Vec::new(),
         classes: Vec::new(),
         functions: Vec::new(),
     };
     for item in &module.items {
         match item {
+            Item::Const(f) => p.constants.push(Field {
+                name: f.name.clone(),
+                ty: parse_type(&f.ty),
+                mutable: false,
+                init: f.init.as_deref().map(parse_expr_text).transpose()?,
+                attrs: f.attrs.clone(),
+                visibility: f.visibility,
+            }),
             Item::Class(c) => lower_class(c, &[], &mut p)?,
             Item::Function(f) => p.functions.push(lower_function(None, f)?),
-            Item::Struct(_) | Item::Use(_) => {}
+            Item::Struct(_) | Item::Use(_) | Item::Module(_) => {}
         }
     }
     Ok(p)
@@ -200,11 +215,13 @@ fn lower_class(c: &AstClass, parent: &[String], p: &mut Program) -> Result<(), D
                 mutable: f.mutable,
                 init: f.init.as_deref().map(parse_expr_text).transpose()?,
                 attrs: f.attrs.clone(),
+                visibility: f.visibility,
             }),
             Member::Function(f) => functions.push(lower_function(Some(path.clone()), f)?),
             Member::Class(nested) => lower_class(nested, &path, p)?,
             Member::Signal(signal) => signals.push(Signal {
                 name: signal.name.clone(),
+                visibility: signal.visibility,
                 params: signal
                     .params
                     .iter()
@@ -214,6 +231,7 @@ fn lower_class(c: &AstClass, parent: &[String], p: &mut Program) -> Result<(), D
                         mutable: false,
                         init: None,
                         attrs: Vec::new(),
+                        visibility: param.visibility,
                     })
                     .collect(),
             }),
@@ -223,6 +241,7 @@ fn lower_class(c: &AstClass, parent: &[String], p: &mut Program) -> Result<(), D
         path,
         name: c.name.clone(),
         attrs: c.attrs.clone(),
+        visibility: c.visibility,
         base: c.base.clone(),
         fields,
         signals,
@@ -244,6 +263,7 @@ fn lower_function(
             mutable: false,
             init: None,
             attrs: Vec::new(),
+            visibility: p.visibility,
         })
         .collect();
     Ok(Function {
@@ -253,6 +273,7 @@ fn lower_function(
         ret: f.ret.as_deref().map(parse_type).unwrap_or(Type::Void),
         body: parse_body(&f.body)?,
         attrs: f.attrs.clone(),
+        visibility: f.visibility,
     })
 }
 

@@ -1,0 +1,8 @@
+@scene
+public class Main extend Game {
+    public void Draw() {
+        Draw.clear(Color.Black);
+        Draw.text("KALCITE REAL-TIME FLUID", 8, 8, Color.Yellow, Color.Black);
+        Draw.text("ARROWS TILT GRAVITY", 177, 8, Color.White, Color.Black);
+    }
+}

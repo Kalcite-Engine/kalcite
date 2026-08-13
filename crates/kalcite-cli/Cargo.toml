@@ -18,5 +18,6 @@ kalcite-scene = { path = "../kalcite-scene" }
 kalcite-assets = { path = "../kalcite-assets" }
 kalcite-package = { path = "../kalcite-package" }
 kalcite-test-runner = { path = "../kalcite-test-runner" }
+kalcite-backend-ti = { path = "../kalcite-backend-ti" }
 kalcite-input = { path = "../kalcite-input" }
 kalcite-save = { path = "../kalcite-save" }

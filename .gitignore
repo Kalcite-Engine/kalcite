@@ -1,4 +1,12 @@
 /target
+.env
+.env.*
+!.env.example
+.direnv/
+.idea/
+.vscode/
+coverage/
+*.lcov
 *.klc.rs
 *.kco
 *.nwa

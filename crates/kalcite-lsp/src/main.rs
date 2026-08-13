@@ -22,8 +22,16 @@ const ENGINE_SYMBOLS: &[(&str, &str)] = &[
     ),
     ("Physics.hit", "bool — deterministic AABB overlap query"),
     (
+        "Physics.circle_hit",
+        "bool — deterministic circle overlap query",
+    ),
+    (
         "Physics.move_x",
         "i16 — fixed-tick AABB slide on the X axis",
+    ),
+    (
+        "Physics.move_y",
+        "i16 — fixed-tick AABB slide on the Y axis",
     ),
     (
         "ProjectSave.valid",
@@ -40,6 +48,9 @@ const ENGINE_SYMBOLS: &[(&str, &str)] = &[
     ("Draw.sprite_frame", "void — draw a spritesheet frame"),
     ("Draw.tilemap", "void — draw a packed CSV tilemap"),
     ("Draw.camera", "void — set the integer 2D camera offset"),
+    ("Draw.circle", "void — draw a filled integer circle"),
+    ("Draw.line", "void — draw a bounded 2D ray segment"),
+    ("Draw.glow", "void — draw an energy-attenuated radial light"),
 ];
 
 struct Backend {
@@ -452,7 +463,16 @@ fn diagnostics_for(extension: &str, text: &str) -> Vec<Diagnostic> {
 }
 
 fn project_completions(root: &Path) -> Vec<CompletionItem> {
-    let mut out = Vec::new();
+    let mut out = kalcite_project::BUILTIN_NODES
+        .iter()
+        .map(|node| {
+            completion(
+                node.name,
+                CompletionItemKind::CLASS,
+                &format!("builtin {:?} node — {}", node.category, node.description),
+            )
+        })
+        .collect::<Vec<_>>();
     if let Ok(manifest) = kalcite_project::load_manifest(root) {
         if let Ok(index) = kalcite_project::discover(root, &manifest) {
             for symbol in index.symbols.values() {
@@ -633,14 +653,16 @@ fn engine_documentation(root: &Path) -> Option<Location> {
 }
 
 fn definition_offset(text: &str, word: &str) -> Option<usize> {
-    let patterns = [
-        format!("class {word}"),
-        format!("fn {word}"),
-        format!("signal {word}"),
-        format!("var {word}"),
-        format!("{word}="),
-        format!("{word} ="),
-    ];
+    if let Ok(tokens) = kalcite_syntax::lex(text) {
+        for (index, token) in tokens.iter().enumerate() {
+            if matches!(&token.kind, kalcite_syntax::TokenKind::Ident(name) if name == word)
+                && declaration_symbol_kind(&tokens, index).is_some()
+            {
+                return Some(token.span.start);
+            }
+        }
+    }
+    let patterns = [format!("{word}="), format!("{word} =")];
     patterns.iter().find_map(|pattern| {
         text.find(pattern)
             .map(|offset| offset + pattern.len() - word.len())
@@ -665,18 +687,14 @@ fn document_symbols(text: &str, uri: &Url) -> Vec<SymbolInformation> {
         return Vec::new();
     };
     let mut out = Vec::new();
-    for pair in tokens.windows(2) {
-        let kind = match pair[0].kind {
-            kalcite_syntax::TokenKind::Class => SymbolKind::CLASS,
-            kalcite_syntax::TokenKind::Fn => SymbolKind::FUNCTION,
-            kalcite_syntax::TokenKind::Signal => SymbolKind::EVENT,
-            kalcite_syntax::TokenKind::Var => SymbolKind::VARIABLE,
-            _ => continue,
-        };
-        let kalcite_syntax::TokenKind::Ident(ref name) = pair[1].kind else {
+    for (index, token) in tokens.iter().enumerate() {
+        let Some(kind) = declaration_symbol_kind(&tokens, index) else {
             continue;
         };
-        let range = byte_range(text, pair[1].span.start, pair[1].span.end);
+        let kalcite_syntax::TokenKind::Ident(ref name) = token.kind else {
+            continue;
+        };
+        let range = byte_range(text, token.span.start, token.span.end);
         #[allow(deprecated)]
         out.push(SymbolInformation {
             name: name.clone(),
@@ -688,6 +706,35 @@ fn document_symbols(text: &str, uri: &Url) -> Vec<SymbolInformation> {
         });
     }
     out
+}
+
+fn declaration_symbol_kind(tokens: &[kalcite_syntax::Token], index: usize) -> Option<SymbolKind> {
+    use kalcite_syntax::TokenKind;
+    if !matches!(tokens.get(index)?.kind, TokenKind::Ident(_)) {
+        return None;
+    }
+    let previous = index.checked_sub(1).and_then(|i| tokens.get(i));
+    let next = tokens.get(index + 1);
+    match previous.map(|token| &token.kind) {
+        Some(TokenKind::Class) => Some(SymbolKind::CLASS),
+        Some(TokenKind::Fn) => Some(SymbolKind::FUNCTION),
+        Some(TokenKind::Signal) => Some(SymbolKind::EVENT),
+        Some(TokenKind::Var) => Some(SymbolKind::VARIABLE),
+        Some(TokenKind::Ident(_)) | Some(TokenKind::RBracket)
+            if matches!(next.map(|token| &token.kind), Some(TokenKind::LParen)) =>
+        {
+            Some(SymbolKind::FUNCTION)
+        }
+        Some(TokenKind::Ident(_)) | Some(TokenKind::RBracket)
+            if matches!(
+                next.map(|token| &token.kind),
+                Some(TokenKind::Assign | TokenKind::Semicolon)
+            ) =>
+        {
+            Some(SymbolKind::CONSTANT)
+        }
+        _ => None,
+    }
 }
 
 fn word_at(text: &str, position: Position) -> String {
@@ -768,9 +815,11 @@ mod tests {
 
     #[test]
     fn locates_words_and_definitions() {
-        let text = "class Player extends Node {}\nInput.action_held(\"Left\");";
+        let text = "public class Player extend Node { private i16 speed = 2; public void Update() {} }\nInput.action_held(\"Left\");";
         assert_eq!(word_at(text, Position::new(1, 10)), "Input.action_held");
-        assert_eq!(definition_offset(text, "Player"), Some(6));
+        assert_eq!(definition_offset(text, "Player"), Some(13));
+        assert!(definition_offset(text, "speed").is_some());
+        assert!(definition_offset(text, "Update").is_some());
     }
 
     #[test]
@@ -781,9 +830,19 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert!(labels.contains("Input.action_pressed"));
         assert!(labels.contains("Physics.move_x"));
+        assert!(labels.contains("Physics.move_y"));
+        assert!(labels.contains("Physics.circle_hit"));
         assert!(labels.contains("ProjectSave.compatible"));
         assert!(labels.contains("Audio.tone"));
         assert!(labels.contains("Draw.sprite_frame"));
+        assert!(labels.contains("Draw.line"));
+        assert!(labels.contains("Draw.glow"));
+        assert!(kalcite_project::builtin_node("CollisionShape2D").is_some());
+        assert!(kalcite_project::builtin_node("Fluid2D").is_some());
+        assert!(kalcite_project::builtin_node("RayLight2D").is_some());
+        assert!(kalcite_project::builtin_node("RayTracer3D").is_some());
+        assert!(kalcite_project::builtin_node("TileMap").is_some());
+        assert!(kalcite_project::builtin_node("VBoxContainer").is_some());
     }
 
     #[test]

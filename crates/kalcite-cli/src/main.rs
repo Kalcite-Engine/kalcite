@@ -11,7 +11,7 @@ use std::{
 
 fn usage() {
     eprintln!(
-        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|web]\n  kalcite build-app FILE.klc --target numworks [-o GAME.nwa] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME SOURCE [REVISION] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|web]"
+        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|ti|web]\n  kalcite build-app FILE.klc --target numworks|desktop|ti [-o OUTPUT] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite build-ti FILE.klc [-o GAME.8xp] [--name NAME] [--no-build]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME SOURCE [REVISION] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|ti|web]"
     );
 }
 
@@ -26,6 +26,7 @@ fn main() -> ExitCode {
         "project-check" => project_command(&args[2..], false),
         "project-build" => project_command(&args[2..], true),
         "build-nwa" => build_nwa_command(&args[2..]),
+        "build-ti" => build_ti_command(&args[2..]),
         "build-app" => build_app_command(&args[2..]),
         "doctor" => doctor_command(&args[2..]),
         "libs" => libs_command(),
@@ -61,9 +62,12 @@ fn build_app_command(args: &[String]) -> ExitCode {
     match target {
         "numworks" => build_nwa_command(&filtered),
         "desktop" => build_desktop_command(&filtered, false, &[]),
+        "ti" | "ti83" | "ti83+" | "ti83plus" | "ti84" | "ti84+" | "ti84plus" => {
+            build_ti_command(&filtered)
+        }
         other => {
             eprintln!(
-                "native backend `{other}` is not implemented yet; available: numworks, desktop"
+                "native backend `{other}` is not implemented yet; available: numworks, desktop, ti"
             );
             ExitCode::FAILURE
         }
@@ -275,6 +279,173 @@ fn build_desktop_command(args: &[String], run: bool, runner_args: &[String]) -> 
         }
     }
     ExitCode::SUCCESS
+}
+
+fn build_ti_command(args: &[String]) -> ExitCode {
+    let Some(input_arg) = args.first() else {
+        usage();
+        return ExitCode::FAILURE;
+    };
+    let input = PathBuf::from(input_arg);
+    let (source, mut output, mut app_name, generated_root) = if input.is_dir() {
+        let Some(root) = find_root(&input) else {
+            eprintln!("no kalcite.toml found from {}", input.display());
+            return ExitCode::FAILURE;
+        };
+        if let Err(error) = sync_project_packages(&root) {
+            eprintln!("package sync failed: {error}");
+            return ExitCode::FAILURE;
+        }
+        let manifest = match load_manifest(&root) {
+            Ok(value) => value,
+            Err(error) => {
+                eprintln!("manifest error: {error:?}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let index = match discover(&root, &manifest) {
+            Ok(value) => value,
+            Err(error) => {
+                eprintln!("project scan failed: {error:?}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let diagnostics = validate(&index);
+        for diagnostic in &diagnostics {
+            let level = match diagnostic.severity {
+                Severity::Warning => "warning",
+                Severity::Error => "error",
+            };
+            eprintln!(
+                "{}: {level}[{}]: {}",
+                relative(&root, &diagnostic.path).display(),
+                diagnostic.code,
+                diagnostic.message
+            );
+        }
+        if diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == Severity::Error)
+        {
+            return ExitCode::FAILURE;
+        }
+        let mut scripts = index.scripts.iter().collect::<Vec<_>>();
+        scripts.sort_by(|left, right| left.path.cmp(&right.path));
+        let mut source = String::new();
+        for script in scripts {
+            source.push_str("\n// ---- ");
+            source.push_str(&relative(&root, &script.path).display().to_string());
+            source.push_str(" ----\n");
+            source.push_str(&script.source);
+            source.push('\n');
+        }
+        let name = default_ti_name(&manifest.name);
+        (
+            source,
+            root.join(format!("{name}.8xp")),
+            name,
+            root.join(".kalcite/ti/main"),
+        )
+    } else {
+        let source = match fs::read_to_string(&input) {
+            Ok(value) => value,
+            Err(error) => {
+                eprintln!("{}: {error}", input.display());
+                return ExitCode::FAILURE;
+            }
+        };
+        let name = default_ti_name(
+            input
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .unwrap_or("Kalcite"),
+        );
+        (
+            source,
+            input.with_extension("8xp"),
+            name,
+            PathBuf::from(".kalcite/ti").join(input.file_stem().unwrap_or_default()),
+        )
+    };
+    let mut no_build = false;
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" if i + 1 < args.len() => {
+                output = PathBuf::from(&args[i + 1]);
+                i += 2;
+            }
+            "--name" if i + 1 < args.len() => {
+                app_name = args[i + 1].to_ascii_uppercase();
+                i += 2;
+            }
+            "--no-build" => {
+                no_build = true;
+                i += 1;
+            }
+            other => {
+                eprintln!("unknown option `{other}`");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    if !kalcite_backend_ti::valid_name(&app_name) {
+        eprintln!("TI program name must be 1..=8 ASCII letters or digits");
+        return ExitCode::FAILURE;
+    }
+    if let Err(error) = kalcite_compiler::emit_ti_project(&source, &app_name, &generated_root) {
+        eprintln!("TI project generation failed: {error}");
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "generated experimental TI-83+/TI-84+ project in {}",
+        generated_root.display()
+    );
+    if no_build {
+        println!(
+            "build it with: cd {} && make PROGRAM={app_name}",
+            generated_root.display()
+        );
+        return ExitCode::SUCCESS;
+    }
+    let status = std::process::Command::new("make")
+        .current_dir(&generated_root)
+        .arg(format!("PROGRAM={app_name}"))
+        .status();
+    if !matches!(status, Ok(value) if value.success()) {
+        eprintln!(
+            "TI build failed: install spasm-ng, or use --no-build to keep the generated project"
+        );
+        return ExitCode::FAILURE;
+    }
+    let built = generated_root.join(format!("{app_name}.8xp"));
+    if !built.is_file() {
+        eprintln!("expected TI program not found: {}", built.display());
+        return ExitCode::FAILURE;
+    }
+    if let Some(parent) = output.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Err(error) = fs::copy(&built, &output) {
+        eprintln!("{}: {error}", output.display());
+        return ExitCode::FAILURE;
+    }
+    println!("built {} (experimental TI bootstrap)", output.display());
+    ExitCode::SUCCESS
+}
+
+fn default_ti_name(name: &str) -> String {
+    let name = name
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(8)
+        .collect::<String>()
+        .to_ascii_uppercase();
+    if name.is_empty() {
+        "KALCITE".into()
+    } else {
+        name
+    }
 }
 
 fn build_nwa_command(args: &[String]) -> ExitCode {
@@ -1380,7 +1551,7 @@ fn file_command(command: &str, args: &[String]) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::default_numworks_name;
+    use super::{default_numworks_name, default_ti_name};
 
     #[test]
     fn numworks_default_name_is_ascii_and_bounded() {
@@ -1388,12 +1559,19 @@ mod tests {
         assert_eq!(default_numworks_name("Jeu🎮"), "Jeu");
         assert_eq!(default_numworks_name("🎮"), "Kalcite");
     }
+
+    #[test]
+    fn ti_default_name_is_alphanumeric_uppercase_and_bounded() {
+        assert_eq!(default_ti_name("Game Project!"), "GAMEPROJ");
+        assert_eq!(default_ti_name("🎮"), "KALCITE");
+    }
 }
 
 fn target_from_name(name: &str) -> Target {
     match name {
         "numworks" => Target::NumWorks,
         "desktop" => Target::Desktop,
+        "ti" | "ti83" | "ti83+" | "ti83plus" | "ti84" | "ti84+" | "ti84plus" => Target::Ti,
         "web" => Target::Web,
         _ => Target::Portable,
     }
@@ -1403,6 +1581,7 @@ fn parse_target_option(args: &[String]) -> Option<Target> {
         .find(|w| w[0] == "--target")
         .map(|w| target_from_name(&w[1]))
 }
+
 fn relative<'a>(root: &'a Path, path: &'a Path) -> &'a Path {
     path.strip_prefix(root).unwrap_or(path)
 }

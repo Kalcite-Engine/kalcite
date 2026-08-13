@@ -1,9 +1,9 @@
 @autoload
-class Game extends Node {
-    var score: u16 = 0;
-    signal score_changed(value: u16);
+public class Game extend Node {
+    u16 score = 0;
+    public signal score_changed(u16 value);
 
-    fn add_score(value: u8) -> void {
+    public void add_score(u8 value) {
         score += value;
         score_changed.emit(score);
     }

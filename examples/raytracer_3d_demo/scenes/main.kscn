@@ -1,0 +1,34 @@
+[scene]
+root = "Main"
+
+[node "Main"]
+script = "Main"
+
+[node "Renderer" type="RayTracer3D" parent="Main"]
+x = 0
+y = 0
+width = 320
+height = 240
+resolution = 80
+ambient = 16
+
+[node "RedSphere" type="RaySphere3D" parent="Main"]
+center_x = -42
+center_y = 16
+center_z = 70
+radius = 34
+color = Red
+
+[node "GreenSphere" type="RaySphere3D" parent="Main"]
+center_x = 38
+center_y = 22
+center_z = 92
+radius = 30
+color = Green
+
+[node "BlueSphere" type="RaySphere3D" parent="Main"]
+center_x = 0
+center_y = -28
+center_z = 116
+radius = 24
+color = Cyan

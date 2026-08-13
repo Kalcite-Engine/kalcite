@@ -1,0 +1,111 @@
+[scene]
+root = "Main"
+
+[node "Main"]
+script = "Main"
+
+[node "World" type="Node2D" parent="Main"]
+position = [12, 24]
+
+[node "Rectangle" type="CollisionShape2D" parent="Main/World"]
+shape = rectangle
+x = 12
+y = 20
+width = 36
+height = 28
+debug_visible = true
+
+[node "Circle" type="CollisionShape2D" parent="Main/World"]
+shape = circle
+x = 62
+y = 20
+radius = 16
+debug_visible = true
+
+[node "Capsule" type="CollisionShape2D" parent="Main/World"]
+shape = capsule
+x = 106
+y = 20
+width = 24
+height = 44
+radius = 12
+debug_visible = true
+
+[node "Ground" type="StaticBody2D" parent="Main/World"]
+collision_layer = 1
+collision_mask = 1
+
+[node "PlayerBody" type="CharacterBody2D" parent="Main/World"]
+collision_layer = 2
+collision_mask = 1
+
+[node "Detection" type="Area2D" parent="Main/World"]
+collision_layer = 4
+collision_mask = 2
+
+[node "Gui" type="Control" parent="Main"]
+position = [158, 14]
+
+[node "Panel" type="Panel" parent="Main/Gui"]
+width = 150
+height = 210
+color = Blue
+
+[node "Title" type="Label" parent="Main/Gui/Panel"]
+x = 10
+y = 12
+text = "KALCITE GUI NODES"
+color = Yellow
+background = Blue
+
+[node "Info" type="Label" parent="Main/Gui/Panel"]
+x = 10
+y = 34
+text = "2D + COLLISION + UI"
+color = White
+background = Blue
+
+[node "Start" type="Button" parent="Main/Gui/Panel"]
+x = 10
+y = 64
+width = 126
+height = 28
+text = "START"
+background = Gray
+selected = true
+
+[node "Options" type="Button" parent="Main/Gui/Panel"]
+x = 10
+y = 98
+width = 126
+height = 28
+text = "OPTIONS"
+background = Gray
+selected_color = Cyan
+
+[node "Health" type="ProgressBar" parent="Main/Gui/Panel"]
+x = 10
+y = 140
+width = 126
+height = 14
+value = 72
+max = 100
+fill_color = Green
+background = Gray
+
+[node "Warning" type="ColorRect" parent="Main/Gui/Panel"]
+x = 10
+y = 166
+width = 126
+height = 22
+color = Orange
+
+[node "Layout" type="VBoxContainer" parent="Main/Gui/Panel"]
+x = 10
+y = 194
+width = 126
+height = 24
+separation = 4
+
+@signal Main/Gui/Panel/Start.pressed -> Main.on_start
+@signal Main/Gui/Panel/Options.pressed -> Main.on_options

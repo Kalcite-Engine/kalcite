@@ -1,0 +1,9 @@
+[project]
+name = "RayTracer3D"
+entry_scene = "scenes/main.kscn"
+scripts_dir = "scripts"
+scenes_dir = "scenes"
+assets_dir = "assets"
+input_map = "input.kmap"
+save_schema = "save.kschema"
+target = "desktop"

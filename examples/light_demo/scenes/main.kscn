@@ -1,0 +1,33 @@
+[scene]
+root = "Main"
+
+[node "Main"]
+script = "Main"
+
+[node "Lamp" type="RayLight2D" parent="Main"]
+x = 160
+y = 120
+rays = 16
+length = 110
+radius = 90
+energy = 75
+direction = 0
+color = Yellow
+
+[node "WallTop" type="LightOccluder2D" parent="Main"]
+x = 64
+y = 72
+width = 192
+height = 8
+
+[node "WallLeft" type="LightOccluder2D" parent="Main"]
+x = 80
+y = 136
+width = 80
+height = 8
+
+[node "WallRight" type="LightOccluder2D" parent="Main"]
+x = 208
+y = 136
+width = 80
+height = 8

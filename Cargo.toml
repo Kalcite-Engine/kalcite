@@ -11,6 +11,7 @@ members = [
   "crates/kalcite-backend-rust",
   "crates/kalcite-backend-numworks",
   "crates/kalcite-backend-desktop",
+  "crates/kalcite-backend-ti",
   "crates/kalcite-cli",
   "crates/kalcite-runtime-core",
   "crates/kalcite-stdlib",
@@ -32,6 +33,7 @@ members = [
   "crates/kalcite-package",
   "crates/kalcite-mir-opt",
   "crates/kalcite-test-runner",
+  "crates/kalcite-editor",
   "examples/pong",
 ]
 

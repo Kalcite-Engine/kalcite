@@ -30,7 +30,7 @@ Small allocation-free MessagePack helpers designed for saves:
 use std.msgpack;
 
 MsgPack.write_u32("SCORE", 1200);
-var score: u32 = MsgPack.read_u32("SCORE", 0);
+u32 score = MsgPack.read_u32("SCORE", 0);
 MsgPack.write_i32("X", -42);
 MsgPack.write_bool("SEEN_INTRO", true);
 MsgPack.write_vec2fx("PLAYER_POS", Vec2fx(12, 80));
@@ -45,7 +45,7 @@ Convenience wrapper over MessagePack:
 ```klc
 use std.save;
 Save.u32("SCORE", 9001);
-var score: u32 = Save.load_u32("SCORE", 0);
+u32 score = Save.load_u32("SCORE", 0);
 ```
 
 ### `std.math`

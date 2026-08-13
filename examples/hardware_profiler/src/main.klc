@@ -2,79 +2,79 @@ use std.msgpack;
 use std.save;
 
 @scene
-class HardwareProfiler extends Game {
+public class HardwareProfiler extend Game {
     @pool(8)
-    class Probe extends Entity {
-        var value: u32 = 7;
+    public class Probe extend Entity {
+        u32 value = 7;
     }
 
-    var page: u8 = 0;
-    var ran: bool = false;
-    var ok_latch: bool = false;
-    var input_can_continue: bool = false;
+    u8 page = 0;
+    bool ran = false;
+    bool ok_latch = false;
+    bool input_can_continue = false;
 
-    var passed: u32 = 0;
-    var failed: u32 = 0;
-    var skipped: u32 = 0;
-    var sleep_ok: bool = false;
-    var cpu_ok: bool = false;
-    var draw_ok: bool = false;
-    var display_ok: bool = false;
-    var random_ok: bool = false;
-    var pool_ok: bool = false;
-    var input_ok: bool = false;
-    var frame_ok: bool = false;
-    var visual_ok: bool = false;
-    var storage_supported: bool = false;
-    var storage_write_ok: bool = false;
-    var storage_read_ok: bool = false;
-    var storage_overwrite_ok: bool = false;
-    var storage_delete_ok: bool = false;
-    var storage_persist_ok: bool = false;
-    var storage_persist_pending: bool = false;
-    var storage_skipped: bool = false;
-    var msgpack_ok: bool = false;
+    u32 passed = 0;
+    u32 failed = 0;
+    u32 skipped = 0;
+    bool sleep_ok = false;
+    bool cpu_ok = false;
+    bool draw_ok = false;
+    bool display_ok = false;
+    bool random_ok = false;
+    bool pool_ok = false;
+    bool input_ok = false;
+    bool frame_ok = false;
+    bool visual_ok = false;
+    bool storage_supported = false;
+    bool storage_write_ok = false;
+    bool storage_read_ok = false;
+    bool storage_overwrite_ok = false;
+    bool storage_delete_ok = false;
+    bool storage_persist_ok = false;
+    bool storage_persist_pending = false;
+    bool storage_skipped = false;
+    bool msgpack_ok = false;
 
-    var telemetry_supported: bool = false;
-    var battery: u32 = 0;
-    var battery_mv: u32 = 0;
-    var backlight: u32 = 0;
-    var usb: bool = false;
-    var charging: bool = false;
+    bool telemetry_supported = false;
+    u32 battery = 0;
+    u32 battery_mv = 0;
+    u32 backlight = 0;
+    bool usb = false;
+    bool charging = false;
 
-    var sleep_ms: u32 = 0;
-    var cpu_ms: u32 = 0;
-    var cpu_value: u32 = 0;
-    var draw_ms: u32 = 0;
-    var display_pixel: u32 = 0;
-    var random_a: u32 = 0;
-    var random_b: u32 = 0;
-    var frame_start: u32 = 0;
-    var frame_count: u32 = 0;
-    var frame_ms: u32 = 0;
-    var fps: u32 = 0;
-    var storage_write_ms: u32 = 0;
-    var storage_read_ms: u32 = 0;
-    var storage_size: u32 = 0;
-    var storage_checksum: u32 = 0;
-    var storage_free: u32 = 0;
-    var storage_total: u32 = 0;
+    u32 sleep_ms = 0;
+    u32 cpu_ms = 0;
+    u32 cpu_value = 0;
+    u32 draw_ms = 0;
+    u32 display_pixel = 0;
+    u32 random_a = 0;
+    u32 random_b = 0;
+    u32 frame_start = 0;
+    u32 frame_count = 0;
+    u32 frame_ms = 0;
+    u32 fps = 0;
+    u32 storage_write_ms = 0;
+    u32 storage_read_ms = 0;
+    u32 storage_size = 0;
+    u32 storage_checksum = 0;
+    u32 storage_free = 0;
+    u32 storage_total = 0;
 
-    var key_up: bool = false;
-    var key_down: bool = false;
-    var key_left: bool = false;
-    var key_right: bool = false;
-    var key_ok: bool = false;
+    bool key_up = false;
+    bool key_down = false;
+    bool key_left = false;
+    bool key_right = false;
+    bool key_ok = false;
 
-    var probes: Pool[Probe; 8];
-    var probe: Handle[Probe];
+    Pool[Probe; 8] probes;
+    Handle[Probe] probe;
 
-    fn record(ok: bool) -> void {
+    public void record(bool ok) {
         if (ok) { passed += 1; }
         if (!ok) { failed += 1; }
     }
 
-    fn next_pressed() -> bool {
+    public bool next_pressed() {
         if (Input.held(Key.Ok)) {
             if (!ok_latch) {
                 ok_latch = true;
@@ -85,12 +85,12 @@ class HardwareProfiler extends Game {
         return false;
     }
 
-    fn next_page() -> void {
+    public void next_page() {
         page += 1;
         ran = false;
     }
 
-    fn run_info() -> void {
+    public void run_info() {
         telemetry_supported = Hardware.telemetry_supported();
         backlight = Hardware.backlight();
         if (telemetry_supported) {
@@ -101,7 +101,7 @@ class HardwareProfiler extends Game {
         }
     }
 
-    fn run_sleep_test() -> void {
+    public void run_sleep_test() {
         u32 start = System.millis();
         System.sleep_ms(40);
         sleep_ms = System.millis() - start;
@@ -109,7 +109,7 @@ class HardwareProfiler extends Game {
         record(sleep_ok);
     }
 
-    fn run_cpu_test() -> void {
+    public void run_cpu_test() {
         u32 start = System.millis();
         u32 i = 0;
         u32 value = 1;
@@ -124,7 +124,7 @@ class HardwareProfiler extends Game {
         record(cpu_ok);
     }
 
-    fn run_draw_test() -> void {
+    public void run_draw_test() {
         u32 start = System.millis();
         i16 i = 0;
         while (i < 1200) {
@@ -136,7 +136,7 @@ class HardwareProfiler extends Game {
         record(draw_ok);
     }
 
-    fn run_display_test() -> void {
+    public void run_display_test() {
         Draw.clear(Color.Black);
         Draw.rect(10, 10, 12, 12, Color.Green);
         display_pixel = Draw.pixel_at(14, 14);
@@ -144,14 +144,14 @@ class HardwareProfiler extends Game {
         record(display_ok);
     }
 
-    fn run_random_test() -> void {
+    public void run_random_test() {
         random_a = Hardware.random();
         random_b = Hardware.random();
         random_ok = random_a != random_b;
         record(random_ok);
     }
 
-    fn run_pool_test() -> void {
+    public void run_pool_test() {
         probe = probes.spawn(Probe.new());
         bool first_ok = probe.is_valid() && probes.contains(probe);
         probes.despawn(probe);
@@ -161,7 +161,7 @@ class HardwareProfiler extends Game {
         probe = Handle.invalid();
     }
 
-    fn run_storage_test() -> void {
+    public void run_storage_test() {
         storage_supported = Storage.supported();
         if (!storage_supported) {
             storage_skipped = true;
@@ -212,7 +212,7 @@ class HardwareProfiler extends Game {
         Storage.remove("KALCITE_MP");
     }
 
-    fn update() -> void {
+    public void Update() {
         if (page == 0) {
             if (next_pressed()) { next_page(); }
         }
@@ -293,14 +293,14 @@ class HardwareProfiler extends Game {
         }
     }
 
-    fn draw_header() -> void {
+    public void draw_header() {
         Draw.rect(0, 0, 320, 24, Color.Blue);
         Draw.text("KALCITE HARDWARE LAB", 8, 8, Color.White, Color.Blue);
         Draw.text("TEST", 250, 8, Color.White, Color.Blue);
         Draw.number(page, 286, 8, Color.Yellow, Color.Blue);
     }
 
-    fn draw_footer() -> void {
+    public void draw_footer() {
         Draw.rect(0, 222, 320, 18, Color.Gray);
         Draw.text("OK NEXT", 8, 227, Color.White, Color.Gray);
         Draw.text("PASS", 230, 227, Color.Green, Color.Gray);
@@ -309,7 +309,7 @@ class HardwareProfiler extends Game {
         Draw.number(failed, 310, 227, Color.Red, Color.Gray);
     }
 
-    fn draw() -> void {
+    public void Draw() {
         Draw.clear(Color.Black);
         draw_header();
 

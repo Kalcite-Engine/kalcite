@@ -1,8 +1,8 @@
 @scene
-class NativeEscapeDemo extends Game {
-    var ticks: u32 = 0;
+public class NativeEscapeDemo extend Game {
+    u32 ticks = 0;
 
-    fn update() -> void {
+    public void Update() {
         ticks += 1;
 
         // Compiled only by desktop pipelines.
@@ -22,7 +22,7 @@ class NativeEscapeDemo extends Game {
         }
     }
 
-    fn draw() -> void {
+    public void Draw() {
         Draw.clear(Color.Black);
         Draw.text("NATIVE ESCAPE", 8, 8, Color.Green, Color.Black);
         Draw.number(ticks, 8, 28, Color.White, Color.Black);

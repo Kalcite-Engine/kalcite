@@ -1,0 +1,8 @@
+@scene
+public class Main extend Game {
+    public void Draw() {
+        Draw.clear(Color.Black);
+        Draw.text("KALCITE 2D RAYTRACING", 8, 8, Color.Yellow, Color.Black);
+        Draw.text("RAYS STOP ON OCCLUDERS", 8, 220, Color.White, Color.Black);
+    }
+}

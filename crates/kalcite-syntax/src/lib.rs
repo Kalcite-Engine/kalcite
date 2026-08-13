@@ -19,6 +19,11 @@ pub enum TokenKind {
     Const,
     Signal,
     Use,
+    Module,
+    Public,
+    Private,
+    Protected,
+    Extend,
     Extends,
     Return,
     If,
@@ -104,6 +109,29 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Diagnostic> {
                 while i < b.len() && b[i] != b'\n' {
                     i += 1;
                 }
+            }
+            b'/' if i + 1 < b.len() && b[i + 1] == b'*' => {
+                let start = i;
+                i += 2;
+                while i + 1 < b.len() && !(b[i] == b'*' && b[i + 1] == b'/') {
+                    if b[i] == b'/' && b[i + 1] == b'*' {
+                        return Err(Diagnostic {
+                            message: "nested block comments are not allowed".into(),
+                            span: Span { start, end: i + 2 },
+                        });
+                    }
+                    i += 1;
+                }
+                if i + 1 >= b.len() {
+                    return Err(Diagnostic {
+                        message: "unterminated block comment".into(),
+                        span: Span {
+                            start,
+                            end: b.len(),
+                        },
+                    });
+                }
+                i += 2;
             }
             b'/' => {
                 out.push(tok(TokenKind::Slash, i, 1));
@@ -271,6 +299,11 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Diagnostic> {
                     "const" => TokenKind::Const,
                     "signal" => TokenKind::Signal,
                     "use" => TokenKind::Use,
+                    "module" => TokenKind::Module,
+                    "public" => TokenKind::Public,
+                    "private" => TokenKind::Private,
+                    "protected" => TokenKind::Protected,
+                    "extend" => TokenKind::Extend,
                     "extends" => TokenKind::Extends,
                     "return" => TokenKind::Return,
                     "if" => TokenKind::If,
@@ -454,10 +487,16 @@ pub struct Module {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
+    Module(ModuleDecl),
     Use(UseDecl),
+    Const(Field),
     Class(Class),
     Struct(Struct),
     Function(Function),
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModuleDecl {
+    pub path: Vec<String>,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct UseDecl {
@@ -471,6 +510,7 @@ pub struct Attribute {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
     pub attrs: Vec<Attribute>,
+    pub visibility: Visibility,
     pub name: String,
     pub base: Option<String>,
     pub members: Vec<Member>,
@@ -478,6 +518,7 @@ pub struct Class {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Struct {
     pub attrs: Vec<Attribute>,
+    pub visibility: Visibility,
     pub name: String,
     pub fields: Vec<Field>,
 }
@@ -491,6 +532,7 @@ pub enum Member {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     pub attrs: Vec<Attribute>,
+    pub visibility: Visibility,
     pub mutable: bool,
     pub name: String,
     pub ty: String,
@@ -499,16 +541,27 @@ pub struct Field {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signal {
     pub attrs: Vec<Attribute>,
+    pub visibility: Visibility,
     pub name: String,
     pub params: Vec<Field>,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub attrs: Vec<Attribute>,
+    pub visibility: Visibility,
     pub name: String,
     pub params: Vec<Field>,
     pub ret: Option<String>,
     pub body: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Visibility {
+    Public,
+    Private,
+    Protected,
+    #[default]
+    Internal,
 }
 
 pub fn parse(src: &str) -> Result<Module, Diagnostic> {
@@ -528,29 +581,48 @@ impl<'a> Parser<'a> {
     fn module(&mut self) -> Result<Module, Diagnostic> {
         let mut items = Vec::new();
         while !matches!(self.peek(), TokenKind::Eof) {
+            if matches!(self.peek(), TokenKind::Module) {
+                items.push(Item::Module(self.module_decl()?));
+                continue;
+            }
             if matches!(self.peek(), TokenKind::Use) {
                 items.push(Item::Use(self.use_decl()?));
                 continue;
             }
             let a = self.attrs()?;
+            let visibility = self.visibility();
             items.push(match self.peek() {
-                TokenKind::Class => Item::Class(self.class(a)?),
-                TokenKind::Struct => Item::Struct(self.strukt(a)?),
-                TokenKind::Fn => Item::Function(self.function(a)?),
-                _ => return self.err("expected use, class, struct, or fn"),
+                TokenKind::Const => Item::Const(self.const_field(a, visibility)?),
+                TokenKind::Class => Item::Class(self.class(a, visibility)?),
+                TokenKind::Struct => Item::Struct(self.strukt(a, visibility)?),
+                TokenKind::Fn => Item::Function(self.legacy_function(a, visibility)?),
+                TokenKind::Ident(_) | TokenKind::LBracket => {
+                    Item::Function(self.canonical_function(a, visibility)?)
+                }
+                _ => return self.err("expected module, use, const, class, struct, or function"),
             });
         }
         Ok(Module { items })
     }
+    fn module_decl(&mut self) -> Result<ModuleDecl, Diagnostic> {
+        self.expect(TokenKind::Module)?;
+        let path = self.dotted_path()?;
+        self.expect(TokenKind::Semicolon)?;
+        Ok(ModuleDecl { path })
+    }
     fn use_decl(&mut self) -> Result<UseDecl, Diagnostic> {
         self.expect(TokenKind::Use)?;
+        let path = self.dotted_path()?;
+        self.expect(TokenKind::Semicolon)?;
+        Ok(UseDecl { path })
+    }
+    fn dotted_path(&mut self) -> Result<Vec<String>, Diagnostic> {
         let mut path = vec![self.ident()?];
         while matches!(self.peek(), TokenKind::Dot) {
             self.bump();
             path.push(self.ident()?);
         }
-        self.expect(TokenKind::Semicolon)?;
-        Ok(UseDecl { path })
+        Ok(path)
     }
     fn attrs(&mut self) -> Result<Vec<Attribute>, Diagnostic> {
         let mut v = Vec::new();
@@ -581,10 +653,24 @@ impl<'a> Parser<'a> {
         }
         Ok(v)
     }
-    fn class(&mut self, attrs: Vec<Attribute>) -> Result<Class, Diagnostic> {
+    fn visibility(&mut self) -> Visibility {
+        let visibility = match self.peek() {
+            TokenKind::Public => Visibility::Public,
+            TokenKind::Private => Visibility::Private,
+            TokenKind::Protected => Visibility::Protected,
+            _ => return Visibility::Internal,
+        };
+        self.bump();
+        visibility
+    }
+    fn class(
+        &mut self,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+    ) -> Result<Class, Diagnostic> {
         self.bump();
         let name = self.ident()?;
-        let base = if matches!(self.peek(), TokenKind::Extends) {
+        let base = if matches!(self.peek(), TokenKind::Extend | TokenKind::Extends) {
             self.bump();
             Some(self.ident()?)
         } else {
@@ -594,44 +680,113 @@ impl<'a> Parser<'a> {
         let mut members = Vec::new();
         while !matches!(self.peek(), TokenKind::RBrace) {
             let a = self.attrs()?;
+            let member_visibility = self.visibility();
             members.push(match self.peek() {
-                TokenKind::Var | TokenKind::Const => Member::Field(self.field(a)?),
-                TokenKind::Fn => Member::Function(self.function(a)?),
-                TokenKind::Signal => Member::Signal(self.signal(a)?),
-                TokenKind::Class => Member::Class(self.class(a)?),
+                TokenKind::Var => Member::Field(self.legacy_field(a, member_visibility)?),
+                TokenKind::Const => Member::Field(self.const_field(a, member_visibility)?),
+                TokenKind::Fn => Member::Function(self.legacy_function(a, member_visibility)?),
+                TokenKind::Signal => Member::Signal(self.signal(a, member_visibility)?),
+                TokenKind::Class => Member::Class(self.class(a, member_visibility)?),
+                TokenKind::Ident(_) | TokenKind::LBracket => {
+                    let (ty, name) = self.type_and_name()?;
+                    if matches!(self.peek(), TokenKind::LParen) {
+                        Member::Function(self.function_after_name(
+                            a,
+                            member_visibility,
+                            name,
+                            Some(ty),
+                            false,
+                        )?)
+                    } else {
+                        Member::Field(self.field_after_name(
+                            a,
+                            member_visibility,
+                            true,
+                            name,
+                            ty,
+                        )?)
+                    }
+                }
                 _ => return self.err("expected field, function, signal, or nested class"),
             });
         }
         self.bump();
         Ok(Class {
             attrs,
+            visibility,
             name,
             base,
             members,
         })
     }
-    fn strukt(&mut self, attrs: Vec<Attribute>) -> Result<Struct, Diagnostic> {
+    fn strukt(
+        &mut self,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+    ) -> Result<Struct, Diagnostic> {
         self.bump();
         let name = self.ident()?;
         self.expect(TokenKind::LBrace)?;
         let mut fields = Vec::new();
         while !matches!(self.peek(), TokenKind::RBrace) {
             let a = self.attrs()?;
-            fields.push(self.field(a)?);
+            let field_visibility = self.visibility();
+            fields.push(match self.peek() {
+                TokenKind::Var => self.legacy_field(a, field_visibility)?,
+                TokenKind::Const => self.const_field(a, field_visibility)?,
+                TokenKind::Ident(_) | TokenKind::LBracket => {
+                    let (ty, name) = self.type_and_name()?;
+                    self.field_after_name(a, field_visibility, true, name, ty)?
+                }
+                _ => return self.err("expected struct field"),
+            });
         }
         self.bump();
         Ok(Struct {
             attrs,
+            visibility,
             name,
             fields,
         })
     }
-    fn field(&mut self, attrs: Vec<Attribute>) -> Result<Field, Diagnostic> {
-        let mutable = matches!(self.peek(), TokenKind::Var);
-        self.bump();
+    fn legacy_field(
+        &mut self,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+    ) -> Result<Field, Diagnostic> {
+        self.expect(TokenKind::Var)?;
         let name = self.ident()?;
         self.expect(TokenKind::Colon)?;
         let ty = self.type_text()?;
+        self.field_after_name(attrs, visibility, true, name, ty)
+    }
+    fn const_field(
+        &mut self,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+    ) -> Result<Field, Diagnostic> {
+        self.expect(TokenKind::Const)?;
+        let checkpoint = self.at;
+        if let TokenKind::Ident(first) = self.peek().clone() {
+            self.bump();
+            if matches!(self.peek(), TokenKind::Colon) {
+                self.bump();
+                let ty = self.type_text()?;
+                return self.field_after_name(attrs, visibility, false, first, ty);
+            }
+        }
+        self.at = checkpoint;
+        let (ty, name) = self.type_and_name()?;
+        self.field_after_name(attrs, visibility, false, name, ty)
+    }
+    fn field_after_name(
+        &mut self,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+        mutable: bool,
+        name: String,
+        ty: String,
+    ) -> Result<Field, Diagnostic> {
         let init = if matches!(self.peek(), TokenKind::Assign) {
             self.bump();
             Some(self.until_semicolon()?)
@@ -641,23 +796,43 @@ impl<'a> Parser<'a> {
         };
         Ok(Field {
             attrs,
+            visibility,
             mutable,
             name,
             ty,
             init,
         })
     }
-    fn signal(&mut self, attrs: Vec<Attribute>) -> Result<Signal, Diagnostic> {
+    fn signal(
+        &mut self,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+    ) -> Result<Signal, Diagnostic> {
         self.expect(TokenKind::Signal)?;
         let name = self.ident()?;
         self.expect(TokenKind::LParen)?;
         let mut params = Vec::new();
         while !matches!(self.peek(), TokenKind::RParen) {
-            let n = self.ident()?;
-            self.expect(TokenKind::Colon)?;
-            let t = self.type_text_until(&[TokenKind::Comma, TokenKind::RParen])?;
+            let checkpoint = self.at;
+            let legacy_name = if let TokenKind::Ident(first) = self.peek().clone() {
+                self.bump();
+                matches!(self.peek(), TokenKind::Colon).then_some(first)
+            } else {
+                None
+            };
+            let (t, n) = if let Some(first) = legacy_name {
+                self.bump();
+                (
+                    self.type_text_until(&[TokenKind::Comma, TokenKind::RParen])?,
+                    first,
+                )
+            } else {
+                self.at = checkpoint;
+                self.type_and_name()?
+            };
             params.push(Field {
                 attrs: Vec::new(),
+                visibility: Visibility::Internal,
                 mutable: false,
                 name: n,
                 ty: t,
@@ -671,21 +846,52 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::Semicolon)?;
         Ok(Signal {
             attrs,
+            visibility,
             name,
             params,
         })
     }
-    fn function(&mut self, attrs: Vec<Attribute>) -> Result<Function, Diagnostic> {
+    fn legacy_function(
+        &mut self,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+    ) -> Result<Function, Diagnostic> {
         self.expect(TokenKind::Fn)?;
         let name = self.ident()?;
+        self.function_after_name(attrs, visibility, name, None, true)
+    }
+    fn canonical_function(
+        &mut self,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+    ) -> Result<Function, Diagnostic> {
+        let (ret, name) = self.type_and_name()?;
+        self.function_after_name(attrs, visibility, name, Some(ret), false)
+    }
+    fn function_after_name(
+        &mut self,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+        name: String,
+        canonical_ret: Option<String>,
+        legacy_params: bool,
+    ) -> Result<Function, Diagnostic> {
         self.expect(TokenKind::LParen)?;
         let mut params = Vec::new();
         while !matches!(self.peek(), TokenKind::RParen) {
-            let n = self.ident()?;
-            self.expect(TokenKind::Colon)?;
-            let t = self.type_text_until(&[TokenKind::Comma, TokenKind::RParen])?;
+            let (t, n) = if legacy_params {
+                let name = self.ident()?;
+                self.expect(TokenKind::Colon)?;
+                (
+                    self.type_text_until(&[TokenKind::Comma, TokenKind::RParen])?,
+                    name,
+                )
+            } else {
+                self.type_and_name()?
+            };
             params.push(Field {
                 attrs: Vec::new(),
+                visibility: Visibility::Internal,
                 mutable: false,
                 name: n,
                 ty: t,
@@ -696,7 +902,9 @@ impl<'a> Parser<'a> {
             }
         }
         self.bump();
-        let ret = if matches!(self.peek(), TokenKind::Arrow) {
+        let ret = if canonical_ret.is_some() {
+            canonical_ret
+        } else if matches!(self.peek(), TokenKind::Arrow) {
             self.bump();
             Some(self.type_text_until(&[TokenKind::LBrace])?)
         } else {
@@ -705,11 +913,47 @@ impl<'a> Parser<'a> {
         let body = self.block_text()?;
         Ok(Function {
             attrs,
+            visibility,
             name,
             params,
             ret,
             body,
         })
+    }
+    fn type_and_name(&mut self) -> Result<(String, String), Diagnostic> {
+        let start = self.tokens[self.at].span.start;
+        match self.peek() {
+            TokenKind::Ident(_) => {
+                self.bump();
+                if matches!(self.peek(), TokenKind::LBracket) {
+                    self.consume_balanced_square()?;
+                }
+            }
+            TokenKind::LBracket => self.consume_balanced_square()?,
+            _ => return self.err("expected type"),
+        }
+        let type_end = self.tokens[self.at].span.start;
+        let name = self.ident()?;
+        Ok((self.src[start..type_end].trim().into(), name))
+    }
+    fn consume_balanced_square(&mut self) -> Result<(), Diagnostic> {
+        self.expect(TokenKind::LBracket)?;
+        let mut depth = 1usize;
+        while depth > 0 {
+            match self.peek() {
+                TokenKind::LBracket => {
+                    depth += 1;
+                    self.bump();
+                }
+                TokenKind::RBracket => {
+                    depth -= 1;
+                    self.bump();
+                }
+                TokenKind::Eof => return self.err("unterminated type"),
+                _ => self.bump(),
+            }
+        }
+        Ok(())
     }
     fn block_text(&mut self) -> Result<String, Diagnostic> {
         self.expect(TokenKind::LBrace)?;
@@ -802,6 +1046,51 @@ mod tests {
     fn parses_class() {
         let m=parse("@pool(4) class Ball extends Entity { var x: i16 = 0; fn tick(dt: u16) -> void { x += 1; } }").unwrap();
         assert_eq!(m.items.len(), 1);
+    }
+
+    #[test]
+    fn parses_canonical_csharp_style_declarations() {
+        let source = r#"
+            module game.player;
+            use engine.input;
+            public const u8 MaxLives = 3;
+            /* one non-nested block comment */
+            @scene
+            public class Pong extend Game {
+                public const [u16; 2] Screen = [320, 240];
+                private i16 score = 0;
+                public signal Scored(u16 value);
+
+                public void Update(i16 delta) {
+                    i16 next = score + delta;
+                    score = next;
+                }
+            }
+        "#;
+        let module = parse(source).unwrap();
+        assert!(matches!(&module.items[0], Item::Module(m) if m.path == ["game", "player"]));
+        assert!(
+            matches!(&module.items[2], Item::Const(field) if field.name == "MaxLives" && field.ty == "u8")
+        );
+        let Item::Class(class) = &module.items[3] else {
+            panic!("expected canonical class")
+        };
+        assert_eq!(class.visibility, Visibility::Public);
+        assert_eq!(class.base.as_deref(), Some("Game"));
+        assert!(
+            matches!(&class.members[0], Member::Field(field) if !field.mutable && field.ty == "[u16; 2]")
+        );
+        assert!(
+            matches!(&class.members[2], Member::Signal(signal) if signal.params[0].ty == "u16")
+        );
+        assert!(
+            matches!(&class.members[3], Member::Function(function) if function.name == "Update" && function.ret.as_deref() == Some("void") && function.params[0].name == "delta")
+        );
+    }
+
+    #[test]
+    fn rejects_nested_block_comments() {
+        assert!(lex("/* outer /* nested */ */").is_err());
     }
 }
 

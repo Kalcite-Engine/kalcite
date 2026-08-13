@@ -1,5 +1,5 @@
 // Standard library implemented in KLC. Imported with: use std.easing;
-fn step_towards(value: i16, target: i16, step: i16) -> i16 {
+public i16 step_towards(i16 value, i16 target, i16 step) {
     if (value < target) {
         i16 next = value + step;
         if (next > target) { return target; }

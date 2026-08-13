@@ -50,7 +50,7 @@ pub fn lint(source: &str) -> Vec<Lint> {
     for item in &module.items {
         match item {
             Item::Class(class) => lint_class(class, &class.name, &mut out),
-            Item::Use(_) => {}
+            Item::Use(_) | Item::Module(_) | Item::Const(_) => {}
             Item::Function(function) if function.name.len() == 1 => out.push(Lint {
                 code: "KLC2001",
                 severity: Severity::Warning,
@@ -113,7 +113,7 @@ fn lint_class(class: &Class, path: &str, out: &mut Vec<Lint>) {
                 let exported = field.attrs.iter().any(|a| a.name == "export");
                 let node_ref = field.attrs.iter().find(|a| a.name == "node");
                 if exported && !field.mutable {
-                    out.push(Lint { code: "KLC1101", severity: Severity::Warning, message: format!("`{path}.{}` is const and cannot be edited by the inspector; remove @export or use var", field.name) });
+                    out.push(Lint { code: "KLC1101", severity: Severity::Warning, message: format!("`{path}.{}` is const and cannot be edited by the inspector; remove @export or declare a mutable field", field.name) });
                 }
                 if node_ref.is_some_and(|a| a.args.is_empty()) {
                     out.push(Lint { code: "KLC1102", severity: Severity::Error, message: format!("`{path}.{}` uses @node without a scene path, for example @node(\"Player\")", field.name) });

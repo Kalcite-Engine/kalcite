@@ -4,4 +4,4 @@ version=1
 [gameplay]
 source=path:packages/gameplay
 revision=fixture-v1
-checksum=602beb50cef7cb6c
+checksum=40b0c08a4f9c3c5c

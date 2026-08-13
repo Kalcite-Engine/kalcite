@@ -1,4 +1,4 @@
-use kalcite_hir::{AssignOp, BinaryOp, Expr, NativeLanguage, Stmt, Type, UnaryOp};
+use kalcite_hir::{AssignOp, BinaryOp, Expr, NativeLanguage, Stmt, Type, UnaryOp, Visibility};
 use kalcite_mir::{Class, Program};
 use std::collections::HashSet;
 
@@ -18,6 +18,20 @@ pub fn emit_game(program: &Program) -> Result<String, EmitError> {
     let mut out = String::from(
         "use crate::platform::{Audio, Color, Draw, Hardware, Input, Key, Physics, Storage, System, Vec2fx};\nuse crate::project_data::ProjectSave;\nuse crate::runtime::{Handle, SignalQueue, StaticPool};\nuse crate::stdlib::{Bits, Checksum, ColorUtil, Fixed, Math, MsgPack, Save};\n\n",
     );
+    for constant in &program.constants {
+        if let Some(value) = &constant.init {
+            out.push_str(&format!(
+                "{}const {}: {} = {};\n",
+                rust_visibility(constant.visibility),
+                constant.name,
+                ty(program, &constant.ty),
+                expr_free(program, value, &HashSet::new())
+            ));
+        }
+    }
+    if !program.constants.is_empty() {
+        out.push('\n');
+    }
     for function in &program.functions {
         emit_free_function(&mut out, program, function);
     }
@@ -32,7 +46,11 @@ pub fn emit_game(program: &Program) -> Result<String, EmitError> {
 
 fn emit_free_function(out: &mut String, program: &Program, function: &kalcite_hir::Function) {
     let mut scope: HashSet<String> = function.params.iter().map(|x| x.name.clone()).collect();
-    out.push_str(&format!("pub fn {}(", function.name));
+    out.push_str(&format!(
+        "{}fn {}(",
+        rust_visibility(function.visibility),
+        function.name
+    ));
     for (i, arg) in function.params.iter().enumerate() {
         if i > 0 {
             out.push_str(", ");
@@ -272,10 +290,33 @@ fn expr_free(program: &Program, e: &Expr, scope: &HashSet<String>) -> String {
 }
 
 fn emit_class(out: &mut String, program: &Program, class: &Class) {
-    out.push_str(&format!("pub struct {} {{\n", class.name));
+    out.push_str(&format!(
+        "{}struct {} {{\n",
+        rust_visibility(class.visibility),
+        class.name
+    ));
+    if class_has_engine_field(program, class, "position") {
+        out.push_str("    pub(crate) position: Vec2fx,\n");
+    }
+    if class_has_engine_field(program, class, "rotation") {
+        out.push_str("    pub(crate) rotation: i16,\n");
+    }
+    if class_has_engine_field(program, class, "visible") {
+        out.push_str("    pub(crate) visible: bool,\n");
+    }
+    if class_has_engine_field(program, class, "layer") {
+        out.push_str("    pub(crate) layer: i16,\n");
+    }
+    if class_has_engine_field(program, class, "width") {
+        out.push_str("    pub(crate) width: i16,\n");
+    }
+    if class_has_engine_field(program, class, "height") {
+        out.push_str("    pub(crate) height: i16,\n");
+    }
     for field in class.fields.iter().filter(|f| f.mutable) {
         out.push_str(&format!(
-            "    pub {}: {},\n",
+            "    {}{}: {},\n",
+            rust_visibility(field.visibility),
             field.name,
             ty(program, &field.ty)
         ));
@@ -293,6 +334,24 @@ fn emit_class(out: &mut String, program: &Program, class: &Class) {
         "impl Default for {} {{\n    fn default() -> Self {{ Self {{\n",
         class.name
     ));
+    if class_has_engine_field(program, class, "position") {
+        out.push_str("        position: Vec2fx::new(0, 0),\n");
+    }
+    if class_has_engine_field(program, class, "rotation") {
+        out.push_str("        rotation: 0,\n");
+    }
+    if class_has_engine_field(program, class, "visible") {
+        out.push_str("        visible: true,\n");
+    }
+    if class_has_engine_field(program, class, "layer") {
+        out.push_str("        layer: 0,\n");
+    }
+    if class_has_engine_field(program, class, "width") {
+        out.push_str("        width: 0,\n");
+    }
+    if class_has_engine_field(program, class, "height") {
+        out.push_str("        height: 0,\n");
+    }
     for field in class.fields.iter().filter(|f| f.mutable) {
         let value = field
             .init
@@ -321,8 +380,9 @@ fn emit_class(out: &mut String, program: &Program, class: &Class) {
     for field in class.fields.iter().filter(|f| !f.mutable) {
         if let Some(value) = &field.init {
             out.push_str(&format!(
-                "    pub const {}: {} = {};\n",
-                field.name.to_ascii_uppercase(),
+                "    {}const {}: {} = {};\n",
+                rust_visibility(field.visibility),
+                field.name,
                 ty(program, &field.ty),
                 expr(program, class, value, &HashSet::new())
             ));
@@ -330,7 +390,11 @@ fn emit_class(out: &mut String, program: &Program, class: &Class) {
     }
     for function in &class.functions {
         let mut scope: HashSet<String> = function.params.iter().map(|x| x.name.clone()).collect();
-        out.push_str(&format!("    pub fn {}(&mut self", function.name));
+        out.push_str(&format!(
+            "    {}fn {}(&mut self",
+            rust_visibility(function.visibility),
+            function.name
+        ));
         for arg in &function.params {
             out.push_str(&format!(", {}: {}", arg.name, ty(program, &arg.ty)));
         }
@@ -346,6 +410,59 @@ fn emit_class(out: &mut String, program: &Program, class: &Class) {
         out.push_str("    }\n");
     }
     out.push_str("}\n\n");
+}
+
+fn class_is_a(program: &Program, class: &Class, expected: &str) -> bool {
+    let mut base = class.base.as_deref();
+    for _ in 0..64 {
+        let Some(name) = base else { return false };
+        if name == expected {
+            return true;
+        }
+        base = engine_builtin_parent(name).or_else(|| {
+            program
+                .classes
+                .iter()
+                .find(|candidate| candidate.source_name == name)
+                .and_then(|candidate| candidate.base.as_deref())
+        });
+    }
+    false
+}
+
+fn engine_builtin_parent(name: &str) -> Option<&'static str> {
+    match name {
+        "Game" | "Scene" | "Timer" | "Node2D" | "Control" => Some("Node"),
+        "Entity" | "Sprite2D" | "AnimatedSprite2D" | "Camera2D" | "TileMap" | "Marker2D"
+        | "ParallaxLayer2D" | "CollisionShape2D" | "StaticBody2D" | "CharacterBody2D"
+        | "Area2D" | "Fluid2D" | "RayLight2D" | "LightOccluder2D" | "RayTracer3D" => Some("Node2D"),
+        "Sprite" => Some("Sprite2D"),
+        "Panel" | "ColorRect" | "Label" | "Button" | "TextureRect" | "ProgressBar"
+        | "Container" => Some("Control"),
+        "NinePatchRect" => Some("TextureRect"),
+        "MarginContainer" | "HBoxContainer" | "VBoxContainer" | "GridContainer"
+        | "CenterContainer" => Some("Container"),
+        _ => None,
+    }
+}
+
+fn class_has_engine_field(program: &Program, class: &Class, name: &str) -> bool {
+    let supported = match name {
+        "position" | "visible" | "layer" => {
+            class_is_a(program, class, "Node2D") || class_is_a(program, class, "Control")
+        }
+        "rotation" => class_is_a(program, class, "Node2D"),
+        "width" | "height" => class_is_a(program, class, "Control"),
+        _ => false,
+    };
+    supported && !class.fields.iter().any(|field| field.name == name)
+}
+
+fn rust_visibility(visibility: Visibility) -> &'static str {
+    match visibility {
+        Visibility::Public => "pub ",
+        Visibility::Private | Visibility::Protected | Visibility::Internal => "pub(crate) ",
+    }
 }
 
 fn signal_payload(program: &Program, signal: &kalcite_hir::Signal) -> String {
@@ -585,7 +702,8 @@ fn render_path(
         }
         return format!("{}::{}", resolved, parts[1..].join("::"));
     }
-    let is_field = class.fields.iter().any(|f| f.mutable && f.name == *first);
+    let is_field = class.fields.iter().any(|f| f.mutable && f.name == *first)
+        || class_has_engine_field(program, class, first);
     let head = if is_field {
         format!("self.{first}")
     } else if scope.contains(first) {
@@ -670,6 +788,25 @@ mod tests {
         let r = emitted("@scene class G extends Game { fn update() -> void { var x: i16 = 1; } }");
         assert!(!r.starts_with("#![allow("));
         assert!(r.starts_with("use crate::platform"));
+    }
+    #[test]
+    fn emits_canonical_visibility_constants_and_hooks() {
+        let rust = emitted(
+            "public const u8 MaxLives = 3; @scene public class G extend Game { public const [u16; 2] Screen = [320, 240]; private i16 score = 0; public void Update() { score += MaxLives; } }",
+        );
+        assert!(rust.contains("pub const MaxLives: u8 = 3;"));
+        assert!(rust.contains("pub const Screen: [u16; 2] = [320, 240];"));
+        assert!(rust.contains("pub fn Update(&mut self)"));
+    }
+    #[test]
+    fn node2d_injects_static_transform_fields() {
+        let rust = emitted(
+            "@scene public class Player extend Node2D { public void Update() { position.x += 1; } }",
+        );
+        assert!(rust.contains("pub(crate) position: Vec2fx"));
+        assert!(rust.contains("position: Vec2fx::new(0, 0)"));
+        assert!(rust.contains("self.position.x += 1"));
+        assert!(rust.contains("pub(crate) visible: bool"));
     }
     #[test]
     fn emits_fields_as_self() {

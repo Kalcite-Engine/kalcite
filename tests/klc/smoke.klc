@@ -1,7 +1,7 @@
-class Smoke {
-    var value: u32 = 42;
+public class Smoke {
+    u32 value = 42;
 
-    fn update() -> void {
+    public void Update() {
         u32 copy = value;
     }
 }

@@ -11,6 +11,7 @@ pub enum Target {
     NumWorks = 1,
     Desktop = 2,
     Web = 3,
+    Ti = 4,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,6 +80,7 @@ pub fn decode(input: &[u8]) -> Result<(Header, &[u8]), ObjectError> {
         1 => Target::NumWorks,
         2 => Target::Desktop,
         3 => Target::Web,
+        4 => Target::Ti,
         _ => return Err(ObjectError::UnknownTarget),
     };
     let payload_len = u32::from_le_bytes([input[8], input[9], input[10], input[11]]);
@@ -114,6 +116,15 @@ mod tests {
         let n = encode(Target::NumWorks, 0, b"hello", &mut out).unwrap();
         let (header, payload) = decode(&out[..n]).unwrap();
         assert_eq!(header.target, Target::NumWorks);
+        assert_eq!(payload, b"hello");
+    }
+
+    #[test]
+    fn ti_round_trip() {
+        let mut out = [0u8; 64];
+        let n = encode(Target::Ti, 0, b"hello", &mut out).unwrap();
+        let (header, payload) = decode(&out[..n]).unwrap();
+        assert_eq!(header.target, Target::Ti);
         assert_eq!(payload, b"hello");
     }
 }

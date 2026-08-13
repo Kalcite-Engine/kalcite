@@ -41,18 +41,21 @@ fn unquote(v: &str) -> String {
     v.trim().trim_matches('"').to_string()
 }
 
-fn section_node(line: &str) -> Option<(String, Option<String>)> {
+fn section_node(line: &str) -> Option<(String, Option<String>, Option<String>)> {
     let inner = line.strip_prefix("[node ")?.strip_suffix(']')?;
     let mut name = None;
     let mut parent = None;
+    let mut node_type = None;
     for part in inner.split_whitespace() {
         if name.is_none() && part.starts_with('"') {
             name = Some(unquote(part));
         } else if let Some(v) = part.strip_prefix("parent=") {
             parent = Some(unquote(v));
+        } else if let Some(v) = part.strip_prefix("type=") {
+            node_type = Some(unquote(v));
         }
     }
-    name.map(|n| (n, parent))
+    name.map(|n| (n, parent, node_type))
 }
 
 fn full_path(name: &str, parent: Option<&str>) -> String {
@@ -82,14 +85,18 @@ fn parse_named(source: &str, name: &str) -> Result<Scene, String> {
             current = None;
             continue;
         }
-        if let Some((node_name, parent)) = section_node(line) {
+        if let Some((node_name, parent, node_type)) = section_node(line) {
             let path = full_path(&node_name, parent.as_deref());
             scene.nodes.push(path.clone());
+            let mut properties = BTreeMap::new();
+            if let Some(node_type) = node_type {
+                properties.insert("type".into(), node_type);
+            }
             scene.node_defs.push(Node {
                 path,
                 parent,
                 script: None,
-                properties: BTreeMap::new(),
+                properties,
             });
             current = Some(scene.node_defs.len() - 1);
             continue;
@@ -391,6 +398,18 @@ mod tests {
         assert!(bytes.starts_with(b"KSC2"));
         assert_eq!(decode_compiled(&bytes).unwrap(), s);
         assert_eq!(encode_compiled(&s), bytes);
+    }
+
+    #[test]
+    fn parses_builtin_node_type_from_section() {
+        let scene = parse(
+            "[node \"Root\" type=\"Node2D\"]\n[node \"Hitbox\" type=\"CollisionShape2D\" parent=\"Root\"]\nshape=capsule\n",
+        )
+        .unwrap();
+        assert_eq!(scene.node_defs[0].properties["type"], "Node2D");
+        assert_eq!(scene.node_defs[1].properties["type"], "CollisionShape2D");
+        assert_eq!(scene.node_defs[1].properties["shape"], "capsule");
+        assert_eq!(decode_compiled(&encode_compiled(&scene)).unwrap(), scene);
     }
 
     #[test]

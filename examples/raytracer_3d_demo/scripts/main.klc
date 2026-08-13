@@ -1,0 +1,6 @@
+@scene
+public class Main extend Game {
+    public void Draw() {
+        Draw.clear(Color.Black);
+    }
+}

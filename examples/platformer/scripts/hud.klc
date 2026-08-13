@@ -1,13 +1,13 @@
 @component
-class Hud extends Node {
+public class Hud extend Node {
     @export
-    var player: Player;
+    public Player player;
 
-    fn ready() -> void {
+    public void Ready() {
         player.coin_collected.connect(on_coin_collected);
     }
 
-    fn on_coin_collected(value: u8) -> void {
+    public void on_coin_collected(u8 value) {
         Game.add_score(value);
     }
 }

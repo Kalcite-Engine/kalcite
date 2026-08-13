@@ -1,23 +1,23 @@
 @component
-class Player extends Node2D {
+public class Player extend Node2D {
     @export
-    var speed: i16 = 2;
-    var x: i16 = 16;
-    var y: i16 = 160;
-    var velocity_y: i16 = 0;
-    var frame: u16 = 0;
-    var anim_tick: u16 = 0;
-    var core_one: bool = false;
-    var core_two: bool = false;
-    var core_three: bool = false;
-    var finished: bool = false;
+    i16 speed = 2;
+    i16 x = 16;
+    i16 y = 160;
+    i16 velocity_y = 0;
+    u16 frame = 0;
+    u16 anim_tick = 0;
+    bool core_one = false;
+    bool core_two = false;
+    bool core_three = false;
+    bool finished = false;
 
-    signal core_collected(value: u32);
-    signal collided();
-    signal quest_finished();
-    signal restarted();
+    public signal core_collected(u32 value);
+    public signal collided();
+    public signal quest_finished();
+    public signal restarted();
 
-    fn update() -> void {
+    public void Update() {
         if finished && Input.action_pressed("Jump") {
             x = 16;
             y = 160;
@@ -29,9 +29,9 @@ class Player extends Node2D {
             restarted.emit();
         }
 
-        var dx: i16 = Input.action_axis("Left", "Right") * speed;
-        var next: i16 = Physics.move_x(x, y, 24, 32, dx, 128, 160, 32, 32);
-        var next_two: i16 = Physics.move_x(x, y, 24, 32, dx, 224, 160, 32, 32);
+        i16 dx = Input.action_axis("Left", "Right") * speed;
+        i16 next = Physics.move_x(x, y, 24, 32, dx, 128, 160, 32, 32);
+        i16 next_two = Physics.move_x(x, y, 24, 32, dx, 224, 160, 32, 32);
         if next_two == x {
             next = x;
         }
@@ -85,7 +85,7 @@ class Player extends Node2D {
         }
     }
 
-    fn draw() -> void {
+    public void Draw() {
         if !core_one {
             Draw.rect(75, 143, 10, 17, Color.Cyan);
             Draw.rect(78, 140, 4, 23, Color.White);

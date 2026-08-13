@@ -13,4 +13,5 @@ kalcite-mir = { path = "../kalcite-mir" }
 kalcite-backend-rust = { path = "../kalcite-backend-rust" }
 kalcite-backend-numworks = { path = "../kalcite-backend-numworks" }
 kalcite-backend-desktop = { path = "../kalcite-backend-desktop" }
+kalcite-backend-ti = { path = "../kalcite-backend-ti" }
 kalcite-stdlib = { path = "../kalcite-stdlib" }

@@ -32,18 +32,18 @@ Le nom de classe est automatiquement visible depuis tous les autres scripts du p
 ```kalcite
 // scripts/player.klc
 @component
-class Player extends Node2D {
+public class Player extend Node2D {
     @export
-    var speed: fx8 = 2.0fx;
+    public fx8 speed = 2;
 }
 ```
 
 ```kalcite
 // scripts/camera_follow.klc
 @component
-class CameraFollow extends Node2D {
+public class CameraFollow extend Node2D {
     @export
-    var target: Player;
+    public Player target;
 }
 ```
 
@@ -55,13 +55,13 @@ Le compilateur relie `Player` au bon script, vérifie les doublons et signale un
 
 ```kalcite
 @export
-var speed: fx8 = 1.5fx;
+public fx8 speed = 2;
 
 @export(range = [1, 10], step = 1)
-var lives: u8 = 3;
+public u8 lives = 3;
 
 @export(file = "*.png")
-var texture: SpriteAsset;
+public SpriteAsset texture;
 ```
 
 Les valeurs restent statiquement typées et bornées. L’éditeur ne sérialise pas de dictionnaire dynamique.
@@ -72,11 +72,11 @@ Les valeurs restent statiquement typées et bornées. L’éditeur ne sérialise
 
 ```kalcite
 @component
-class Main extends Node {
+public class Main extend Node {
     @node("Player")
-    var player: Player;
+    private Player player;
 
-    fn ready() -> void {
+    public void Ready() {
         player.enable();
     }
 }
@@ -88,8 +88,8 @@ La référence est résolue lors du build de scène. Sur NumWorks, elle devient 
 
 ```kalcite
 @autoload
-class Game extends Node {
-    var score: u16 = 0;
+public class Game extend Node {
+    public u16 score = 0;
 }
 ```
 
@@ -99,11 +99,11 @@ Tous les scripts peuvent ensuite écrire `Game.score`. Le build génère un stoc
 
 ```kalcite
 @component
-class Health extends Node {
-    signal died();
-    signal changed(value: u8);
+public class Health extend Node {
+    public signal died();
+    public signal changed(u8 value);
 
-    fn damage(amount: u8) -> void {
+    public void damage(u8 amount) {
         changed.emit(value);
         if (value == 0) { died.emit(); }
     }
@@ -115,6 +115,8 @@ Les connexions déclarées dans une scène sont compilées en appels directs. Le
 ## Scènes lisibles
 
 Les scènes `.kscn` utilisent les noms globaux des scripts :
+
+Les nodes intégrés 2D, collision et GUI utilisent `type="NodeType"`. Leur catalogue et leurs propriétés sont décrits dans `NODES.md`.
 
 ```ini
 [scene]

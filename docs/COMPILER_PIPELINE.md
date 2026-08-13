@@ -15,10 +15,10 @@ Kalcite is a frontend plus portable game IR. A platform backend is not allowed t
 
 ## Zero-VM rule
 
-There is no bytecode interpreter on the target. `update()` in a `.klc` file becomes a native Rust method and then native machine code. Platform APIs are lowered to small static wrappers.
+There is no bytecode interpreter on the target. `Update()` in a `.klc` file becomes a native Rust method and then native machine code. Platform APIs are lowered to small static wrappers.
 
 ## Current generic body support
 
 The HIR parser currently supports calls, field/member access, numeric and boolean expressions, arrays, unary operators, binary arithmetic/comparison/logical operators, assignments and compound assignments, `if/else`, `while`, and `return`.
 
-The next compiler stages will add local `var` declarations, `match`, enums with payloads, signals, scene references, compile-time pool allocation and stronger type checking.
+The next compiler stages will add `match`, enums with payloads, scene references, compile-time pool allocation and stronger type checking.

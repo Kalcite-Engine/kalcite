@@ -1,31 +1,31 @@
 @scene
-class Main extends Game {
-    var score: u32 = 0;
-    var won: bool = false;
-    var bumps: u16 = 0;
+public class Main extend Game {
+    u32 score = 0;
+    bool won = false;
+    u16 bumps = 0;
 
-    fn on_core_collected(value: u32) -> void {
+    public void on_core_collected(u32 value) {
         score = package_bonus(score);
         ProjectSave.set_score("QUEST_SAVE", score);
     }
 
-    fn on_player_collided() -> void {
+    public void on_player_collided() {
         bumps += 1;
         Audio.tone(140, 35, 48);
     }
 
-    fn on_finished() -> void {
+    public void on_finished() {
         won = true;
         Audio.tone(1040, 180, 96);
     }
 
-    fn on_restarted() -> void {
+    public void on_restarted() {
         score = 0;
         won = false;
         bumps = 0;
     }
 
-    fn draw() -> void {
+    public void Draw() {
         Draw.clear(Color.Blue);
         Draw.camera(0, 0);
         Draw.tilemap("level.csv", "terrain-sheet.png", 32, 32, 0, 0);

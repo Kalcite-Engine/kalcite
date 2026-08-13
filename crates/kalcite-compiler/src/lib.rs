@@ -92,6 +92,9 @@ pub fn emit_rust_skeleton(m: &Module) -> String {
     let mut o = String::from("#![no_std]\n\n");
     for i in &m.items {
         match i {
+            Item::Const(f) => {
+                o.push_str(&format!("pub const {}: {} = 0;\n", f.name, map_ty(&f.ty)));
+            }
             Item::Struct(s) => {
                 o.push_str(&format!("#[repr(C)]\npub struct {} {{\n", s.name));
                 for f in &s.fields {
@@ -112,7 +115,7 @@ pub fn emit_rust_skeleton(m: &Module) -> String {
                 "pub fn {}() {{ /* generated body pending MIR */ }}\n",
                 f.name
             )),
-            Item::Use(_) => {}
+            Item::Use(_) | Item::Module(_) => {}
         }
     }
     o
@@ -231,6 +234,31 @@ pub fn emit_desktop_project_with_resources(
         resources.save_runtime,
     )
     .map_err(DesktopError::Backend)
+}
+
+#[derive(Debug)]
+pub enum TiError {
+    Syntax(kalcite_syntax::Diagnostic),
+    Backend(kalcite_backend_ti::Error),
+}
+
+impl core::fmt::Display for TiError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Syntax(error) => write!(f, "{error}"),
+            Self::Backend(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+/// Generate the experimental TI-83+/TI-84+ Z80 project.
+pub fn emit_ti_project(
+    source: &str,
+    app_name: &str,
+    root: &std::path::Path,
+) -> Result<(), TiError> {
+    let mir = lower(source).map_err(TiError::Syntax)?;
+    kalcite_backend_ti::emit_project(&mir, app_name, root).map_err(TiError::Backend)
 }
 
 #[cfg(test)]

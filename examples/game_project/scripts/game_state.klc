@@ -1,11 +1,11 @@
 @autoload
-class GameState extends Node {
-    var launches: u16 = 0;
+public class GameState extend Node {
+    u16 launches = 0;
 
-    fn ready() -> void {
+    public void Ready() {
         launches += 1;
         ProjectSave.set_score("GAME_STATE", 41);
-        var restored: u32 = ProjectSave.score("GAME_STATE", 0);
+        u32 restored = ProjectSave.score("GAME_STATE", 0);
         if restored == 41 && !ProjectSave.compatible(ProjectSave.version() + 1, ProjectSave.schema()) {
             launches += 1;
         }
