@@ -124,6 +124,28 @@ public bool kally_git_source_valid(String[512] source) {
     return dots != 2;
 }
 
+public bool kally_path_source_valid(String[512] source) {
+    if kally_source_kind(source) != 2 { return false; }
+    u32 length = Text.length(source);
+    if Text.byte_at(source, 5) == 47 || Text.byte_at(source, 5) == 92 { return false; }
+    u32 index = 5;
+    while index < length {
+        u8 byte = Text.byte_at(source, index);
+        if byte <= 32 || byte == 127 { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+public bool kally_local_reference_valid(String[256] reference) {
+    return Text.length(reference) == 5
+        && Text.byte_at(reference, 0) == 108
+        && Text.byte_at(reference, 1) == 111
+        && Text.byte_at(reference, 2) == 99
+        && Text.byte_at(reference, 3) == 97
+        && Text.byte_at(reference, 4) == 108;
+}
+
 // `=` belongs to Kally's grammar, not to its filesystem adapter.
 public u32 kally_lock_value_start(String[512] line) {
     u32 index = 0;

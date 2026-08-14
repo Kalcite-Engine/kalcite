@@ -116,6 +116,11 @@ pub fn git_source_valid(source: &str) -> bool {
         && klc_core::kally_git_source_valid(klc_runtime::BoundedString::<512>::from_str(source))
 }
 
+pub fn path_source_valid(source: &str) -> bool {
+    source.len() <= 512
+        && klc_core::kally_path_source_valid(klc_runtime::BoundedString::<512>::from_str(source))
+}
+
 pub fn revision_valid(revision: &str) -> bool {
     revision.len() <= 128
         && klc_core::kally_revision_valid(klc_runtime::BoundedString::<128>::from_str(revision))
@@ -129,6 +134,22 @@ pub fn checksum_valid(checksum: &str) -> bool {
 pub fn reference_valid(reference: &str) -> bool {
     reference.len() <= 256
         && klc_core::kally_reference_valid(klc_runtime::BoundedString::<256>::from_str(reference))
+}
+
+pub fn manifest_package_valid(package: &ManifestPackage) -> bool {
+    if !reference_valid(&package.reference) {
+        return false;
+    }
+    match source_kind(&package.source) {
+        Ok(SourceKind::Git) => git_source_valid(&package.source),
+        Ok(SourceKind::Path) => {
+            path_source_valid(&package.source)
+                && klc_core::kally_local_reference_valid(
+                    klc_runtime::BoundedString::<256>::from_str(&package.reference),
+                )
+        }
+        Err(_) => false,
+    }
 }
 
 pub fn resolution_action(
@@ -475,6 +496,11 @@ pub fn load_manifest(path: &Path) -> Result<Manifest, String> {
     if !klc_core::kally_lock_version_supported(manifest.version) {
         return Err(format!("unsupported manifest version {}", manifest.version));
     }
+    for (name, package) in &manifest.packages {
+        if !manifest_package_valid(package) {
+            return Err(format!("invalid dependency request for `{name}`"));
+        }
+    }
     Ok(manifest)
 }
 
@@ -490,9 +516,8 @@ pub fn save_manifest(path: &Path, manifest: &Manifest) -> Result<(), String> {
         if !valid_name(name) {
             return Err(format!("invalid package name `{name}`"));
         }
-        source_kind(&package.source)?;
-        if !reference_valid(&package.reference) {
-            return Err(format!("invalid reference for `{name}`"));
+        if !manifest_package_valid(package) {
+            return Err(format!("invalid dependency request for `{name}`"));
         }
         out.push_str(&format!(
             "\n[{name}]\nsource={}\nreference={}\n",
@@ -616,6 +641,8 @@ mod tests {
         assert_eq!(restored.packages["ui"].reference, "v1.2.3");
         fs::write(&path, "version=1\n[ui]\nsource=path:ui\n").unwrap();
         assert!(load_manifest(&path).is_err());
+        fs::write(&path, "version=1\n[ui]\nsource=path:ui\nreference=main\n").unwrap();
+        assert!(load_manifest(&path).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -669,6 +696,8 @@ mod tests {
         assert!(!git_source_valid(
             "git:https://example.invalid/p.git#/absolute"
         ));
+        assert!(path_source_valid("path:../packages/demo"));
+        assert!(!path_source_valid("path:/absolute"));
         assert!(revision_valid("0123456789abcdef"));
         assert!(!revision_valid("branch/main"));
         assert!(checksum_valid("0123456789abcdef"));
