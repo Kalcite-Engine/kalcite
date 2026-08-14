@@ -67,6 +67,32 @@ pub struct Package {
     pub revision: String,
     pub checksum: String,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceKind {
+    Git,
+    Path,
+}
+
+pub fn source_kind(source: &str) -> Result<SourceKind, String> {
+    if source.len() > 512 {
+        return Err("package source exceeds Kally's 512-byte limit".into());
+    }
+    match klc_core::kally_source_kind(klc_runtime::BoundedString::<512>::from_str(source)) {
+        1 => Ok(SourceKind::Git),
+        2 => Ok(SourceKind::Path),
+        _ => Err("source must start with `git:` or `path:` and include a value".into()),
+    }
+}
+
+/// Source-prefix decoding is deliberately kept separate from policy: KLC has
+/// already accepted the prefix above, while this just lends bytes to I/O code.
+pub fn source_payload(source: &str) -> Result<&str, String> {
+    match source_kind(source)? {
+        SourceKind::Git => Ok(&source[4..]),
+        SourceKind::Path => Ok(&source[5..]),
+    }
+}
 pub fn valid_name(name: &str) -> bool {
     klc_core::kally_valid_name(klc_runtime::BoundedString::<65>::from_str(name))
 }
@@ -249,12 +275,21 @@ pub fn load(path: &Path) -> Result<Lock, String> {
         let Some((key, value)) = line.split_once('=') else {
             return Err(format!("invalid lockfile line: {line}"));
         };
+        let value_start =
+            klc_core::kally_lock_value_start(klc_runtime::BoundedString::<512>::from_str(line));
+        if value_start == 0 || value_start as usize > line.len() {
+            return Err(format!("invalid lockfile line: {line}"));
+        }
         let Some(name) = current.as_ref() else {
             return Err("package property outside package section".into());
         };
         let package = lock.packages.get_mut(name).unwrap();
         match kind {
-            3 if key.trim() == "source" => package.source = value.trim().to_string(),
+            3 if key.trim() == "source" => {
+                let parsed = line[value_start as usize..].trim();
+                source_kind(parsed)?;
+                package.source = parsed.to_string();
+            }
             4 if key.trim() == "reference" => package.reference = value.trim().to_string(),
             5 if key.trim() == "revision" => package.revision = value.trim().to_string(),
             6 if key.trim() == "checksum" => package.checksum = value.trim().to_string(),
@@ -346,11 +381,23 @@ mod tests {
         assert!(valid_name("package-42"));
         assert!(!valid_name("package/name"));
         assert!(!valid_name(&"a".repeat(65)));
+        assert_eq!(
+            source_kind("git:https://example.invalid/p.git").unwrap(),
+            SourceKind::Git
+        );
+        assert_eq!(source_kind("path:packages/demo").unwrap(), SourceKind::Path);
+        assert!(source_kind("https://example.invalid/p.git").is_err());
 
         let root = std::env::temp_dir().join(format!("kally-klc-core-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let path = root.join("kally.lock");
         fs::write(&path, "version=1\n[demo]\nunknown=value\n").unwrap();
+        assert!(load(&path).is_err());
+        fs::write(
+            &path,
+            "version=1\n[demo]\nsource=https://example.invalid/demo\n",
+        )
+        .unwrap();
         assert!(load(&path).is_err());
         fs::remove_dir_all(root).unwrap();
     }

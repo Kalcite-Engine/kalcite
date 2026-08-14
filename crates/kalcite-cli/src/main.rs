@@ -855,30 +855,34 @@ fn kally_add_command(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let (revision, checksum) = if let Some(local) = source.strip_prefix("path:") {
-        match kally::checksum_path(&root.join(local)) {
+    let source_kind = match kally::source_kind(source) {
+        Ok(kind) => kind,
+        Err(error) => {
+            eprintln!("package `{name}`: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let (revision, checksum) = match source_kind {
+        kally::SourceKind::Path => match kally::source_payload(source)
+            .and_then(|local| kally::checksum_path(&root.join(local)))
+        {
             Ok(checksum) => ("local".into(), checksum),
             Err(error) => {
                 eprintln!("package `{name}`: {error}");
                 return ExitCode::FAILURE;
             }
-        }
-    } else if source.starts_with("git:") {
-        match resolve_git_revision(&root, name, source, &reference) {
+        },
+        kally::SourceKind::Git => match resolve_git_revision(&root, name, source, &reference) {
             Ok(revision) => (revision, String::new()),
             Err(error) => {
                 eprintln!("package `{name}`: {error}");
                 return ExitCode::FAILURE;
             }
-        }
-    } else {
-        eprintln!("package `{name}`: source must start with `git:` or `path:`");
-        return ExitCode::FAILURE;
+        },
     };
-    let locked_reference = if source.starts_with("path:") {
-        "local".to_owned()
-    } else {
-        reference
+    let locked_reference = match source_kind {
+        kally::SourceKind::Path => "local".to_owned(),
+        kally::SourceKind::Git => reference,
     };
     lock.packages.insert(
         name.clone(),
@@ -932,7 +936,9 @@ fn kally_update_command(args: &[String]) -> ExitCode {
     };
     let mut updated = 0;
     for (name, package) in &mut lock.packages {
-        if wanted.is_some_and(|wanted| wanted != name) || !package.source.starts_with("git:") {
+        if wanted.is_some_and(|wanted| wanted != name)
+            || kally::source_kind(&package.source) != Ok(kally::SourceKind::Git)
+        {
             continue;
         }
         let reference = if package.reference.is_empty() {
@@ -1031,28 +1037,28 @@ fn sync_kally_packages(root: &Path) -> Result<usize, String> {
         }
     }
     for (name, p) in &lock.packages {
-        if let Some(local) = p.source.strip_prefix("path:") {
-            let src = root.join(local);
-            let dst = cache.join(name);
-            kally::materialize(&src, &dst).map_err(|error| format!("package `{name}`: {error}"))?;
-            if !p.checksum.is_empty() {
-                let got = kally::checksum_path(&dst)
+        match kally::source_kind(&p.source).map_err(|error| format!("package `{name}`: {error}"))? {
+            kally::SourceKind::Path => {
+                let local = kally::source_payload(&p.source)?;
+                let src = root.join(local);
+                let dst = cache.join(name);
+                kally::materialize(&src, &dst)
                     .map_err(|error| format!("package `{name}`: {error}"))?;
-                if got != p.checksum {
+                if !p.checksum.is_empty() {
+                    let got = kally::checksum_path(&dst)
+                        .map_err(|error| format!("package `{name}`: {error}"))?;
+                    if got != p.checksum {
+                        return Err(format!("package `{name}`: checksum mismatch"));
+                    }
+                }
+            }
+            kally::SourceKind::Git => {
+                let checksum = materialize_kally_git_package(root, name, p)
+                    .map_err(|error| format!("package `{name}`: {error}"))?;
+                if !p.checksum.is_empty() && checksum != p.checksum {
                     return Err(format!("package `{name}`: checksum mismatch"));
                 }
             }
-        } else if p.source.starts_with("git:") {
-            let checksum = materialize_kally_git_package(root, name, p)
-                .map_err(|error| format!("package `{name}`: {error}"))?;
-            if !p.checksum.is_empty() && checksum != p.checksum {
-                return Err(format!("package `{name}`: checksum mismatch"));
-            }
-        } else {
-            return Err(format!(
-                "package `{name}`: unsupported source `{}`",
-                p.source
-            ));
         }
     }
     Ok(lock.packages.len())
@@ -1083,9 +1089,10 @@ fn lock_kally_checksums(root: &Path, wanted: Option<&str>) -> Result<(), String>
 }
 
 fn git_source(source: &str) -> Result<(&str, &str), String> {
-    let value = source
-        .strip_prefix("git:")
-        .ok_or("Git source must start with `git:`")?;
+    if kally::source_kind(source)? != kally::SourceKind::Git {
+        return Err("Git source must start with `git:`".into());
+    }
+    let value = kally::source_payload(source)?;
     let (url, subdir) = value.split_once('#').unwrap_or((value, ""));
     if url.is_empty() {
         return Err("Git source has no URL".into());
