@@ -7,21 +7,53 @@ use kalcite_project::{
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    process::ExitCode,
+    process::{Command, ExitCode},
 };
 
 fn usage() {
     eprintln!(
-        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR] [--target TARGET] [--profile cli|ui|game2d|embedded|wasm] [--report]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|ti|web] [--profile cli|ui|game2d|embedded|wasm] [--report]\n  kalcite ui-settings [DIR] [--title TITLE] [--width N] [--height N]\n  kalcite build-app FILE.klc --target numworks|desktop|ti [-o OUTPUT] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite build-ti FILE.klc [-o GAME.8xp] [--name NAME] [--no-build]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME SOURCE [REVISION] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite emit-rust FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|ti|web]"
+        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR] [--target TARGET] [--profile cli|ui|game2d|embedded|wasm] [--report]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|ti|web] [--profile cli|ui|game2d|embedded|wasm] [--report]\n  kalcite ui-settings [DIR] [--title TITLE] [--width N] [--height N]\n  kalcite build-app FILE.klc --target numworks|desktop|ti [-o OUTPUT] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite build-ti FILE.klc [-o GAME.8xp] [--name NAME] [--no-build]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME git:URL[#SUBDIR] [BRANCH_OR_TAG] [DIR]\n  kalcite package-update [NAME] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|ti|web]"
+    );
+}
+
+fn kally_usage() {
+    eprintln!(
+        "usage:\n  kally add NAME git:URL[#SUBDIR] [BRANCH_OR_TAG] [DIR]\n  kally update [NAME] [DIR]\n  kally sync [DIR]\n  kally remove NAME [DIR]\n  kally lock [DIR]\n\nKally manages Git packages for Kalcite projects. `add` resolves a branch or tag\nto an immutable commit in kalcite.lock; `update` is the only command that\nadvances a locked Git dependency."
     );
 }
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
+    let is_kally = args
+        .first()
+        .and_then(|path| Path::new(path).file_stem())
+        .is_some_and(|name| name == "kally");
     let Some(command) = args.get(1).map(String::as_str) else {
-        usage();
+        if is_kally {
+            kally_usage();
+        } else {
+            usage();
+        }
         return ExitCode::FAILURE;
     };
+    if is_kally {
+        return match command {
+            "add" => package_add_command(&args[2..]),
+            "update" => package_update_command(&args[2..]),
+            "sync" => package_sync_command(&args[2..]),
+            "remove" => package_remove_command(&args[2..]),
+            "lock" => package_lock_command(&args[2..]),
+            "help" | "--help" | "-h" => {
+                kally_usage();
+                ExitCode::SUCCESS
+            }
+            _ => {
+                eprintln!("unknown Kally command `{command}`");
+                kally_usage();
+                ExitCode::FAILURE
+            }
+        };
+    }
     match command {
         "init" => init_command(&args[2..]),
         "project-check" => project_command(&args[2..], false),
@@ -36,6 +68,7 @@ fn main() -> ExitCode {
         "asset-png" => asset_png_command(&args[2..]),
         "package-lock" => package_lock_command(&args[2..]),
         "package-add" => package_add_command(&args[2..]),
+        "package-update" => package_update_command(&args[2..]),
         "package-remove" => package_remove_command(&args[2..]),
         "package-sync" => package_sync_command(&args[2..]),
         "test" => test_command(&args[2..]),
@@ -801,7 +834,7 @@ fn package_lock_command(args: &[String]) -> ExitCode {
 
 fn package_add_command(args: &[String]) -> ExitCode {
     if args.len() < 2 {
-        eprintln!("usage: kalcite package-add NAME SOURCE [REVISION] [DIR]");
+        eprintln!("usage: kalcite package-add NAME git:URL[#SUBDIR] [BRANCH_OR_TAG] [DIR]");
         return ExitCode::FAILURE;
     }
     let name = &args[0];
@@ -810,11 +843,11 @@ fn package_add_command(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     }
     let source = &args[1];
-    let revision = args
+    let reference = args
         .get(2)
         .filter(|x| !x.starts_with('-'))
         .cloned()
-        .unwrap_or_else(|| "local".into());
+        .unwrap_or_else(|| "main".into());
     let root = args
         .get(3)
         .map(PathBuf::from)
@@ -827,32 +860,120 @@ fn package_add_command(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let checksum = if let Some(local) = source.strip_prefix("path:") {
+    let (revision, checksum) = if let Some(local) = source.strip_prefix("path:") {
         match kalcite_package::checksum_path(&root.join(local)) {
-            Ok(checksum) => checksum,
+            Ok(checksum) => ("local".into(), checksum),
+            Err(error) => {
+                eprintln!("package `{name}`: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else if source.starts_with("git:") {
+        match resolve_git_revision(&root, name, source, &reference) {
+            Ok(revision) => (revision, String::new()),
             Err(error) => {
                 eprintln!("package `{name}`: {error}");
                 return ExitCode::FAILURE;
             }
         }
     } else {
-        String::new()
+        eprintln!("package `{name}`: source must start with `git:` or `path:`");
+        return ExitCode::FAILURE;
+    };
+    let locked_reference = if source.starts_with("path:") {
+        "local".to_owned()
+    } else {
+        reference
     };
     lock.packages.insert(
         name.clone(),
         kalcite_package::Package {
             source: source.clone(),
+            reference: locked_reference,
             revision,
             checksum,
         },
     );
     match kalcite_package::save(&path, &lock) {
         Ok(()) => {
-            println!("added package `{name}`");
-            ExitCode::SUCCESS
+            match sync_project_packages(&root)
+                .and_then(|_| lock_package_checksums(&root, Some(name)))
+            {
+                Ok(()) => {
+                    println!("added and locked package `{name}` at its resolved revision");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("package `{name}` was added but could not be synced: {error}");
+                    ExitCode::FAILURE
+                }
+            }
         }
         Err(e) => {
             eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Update Git packages by resolving their declared branch or tag again. The
+/// lockfile records the resulting commit, so normal builds remain reproducible.
+fn package_update_command(args: &[String]) -> ExitCode {
+    let (wanted, root) = match args {
+        [] => (None, PathBuf::from(".")),
+        [one] if one.starts_with('.') || Path::new(one).is_dir() => (None, PathBuf::from(one)),
+        [one] => (Some(one.as_str()), PathBuf::from(".")),
+        [name, root] => (Some(name.as_str()), PathBuf::from(root)),
+        _ => {
+            eprintln!("usage: kalcite package-update [NAME] [DIR]");
+            return ExitCode::FAILURE;
+        }
+    };
+    let path = root.join("kalcite.lock");
+    let mut lock = match kalcite_package::load(&path) {
+        Ok(lock) => lock,
+        Err(error) => {
+            eprintln!("{}: {error}", path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut updated = 0;
+    for (name, package) in &mut lock.packages {
+        if wanted.is_some_and(|wanted| wanted != name) || !package.source.starts_with("git:") {
+            continue;
+        }
+        let reference = if package.reference.is_empty() {
+            &package.revision
+        } else {
+            &package.reference
+        };
+        match resolve_git_revision(&root, name, &package.source, reference) {
+            Ok(revision) => {
+                package.revision = revision;
+                package.checksum.clear();
+                updated += 1;
+            }
+            Err(error) => {
+                eprintln!("package `{name}`: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    if wanted.is_some() && updated == 0 {
+        eprintln!("no Git package named `{}`", wanted.unwrap());
+        return ExitCode::FAILURE;
+    }
+    if let Err(error) = kalcite_package::save(&path, &lock) {
+        eprintln!("{}: {error}", path.display());
+        return ExitCode::FAILURE;
+    }
+    match sync_project_packages(&root).and_then(|_| lock_package_checksums(&root, wanted)) {
+        Ok(()) => {
+            println!("updated {updated} Git package(s)");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
             ExitCode::FAILURE
         }
     }
@@ -929,13 +1050,137 @@ fn sync_project_packages(root: &Path) -> Result<usize, String> {
                     return Err(format!("package `{name}`: checksum mismatch"));
                 }
             }
+        } else if p.source.starts_with("git:") {
+            let checksum = materialize_git_package(root, name, p)
+                .map_err(|error| format!("package `{name}`: {error}"))?;
+            if !p.checksum.is_empty() && checksum != p.checksum {
+                return Err(format!("package `{name}`: checksum mismatch"));
+            }
         } else {
             return Err(format!(
-                "package `{name}`: network sources are intentionally not fetched; vendor it with path:"
+                "package `{name}`: unsupported source `{}`",
+                p.source
             ));
         }
     }
     Ok(lock.packages.len())
+}
+
+/// A checksum is calculated only after the exact locked Git commit has been
+/// materialized. This keeps the lockfile a reproducible record of both the
+/// selected commit and the package subtree copied into the project cache.
+fn lock_package_checksums(root: &Path, wanted: Option<&str>) -> Result<(), String> {
+    let path = root.join("kalcite.lock");
+    let mut lock = kalcite_package::load(&path)?;
+    let mut changed = false;
+    for (name, package) in &mut lock.packages {
+        if wanted.is_some_and(|wanted| wanted != name) {
+            continue;
+        }
+        let cached = root.join(".kalcite/packages").join(name);
+        if cached.is_dir() {
+            package.checksum = kalcite_package::checksum_path(&cached)
+                .map_err(|error| format!("package `{name}`: {error}"))?;
+            changed = true;
+        }
+    }
+    if changed {
+        kalcite_package::save(&path, &lock)?;
+    }
+    Ok(())
+}
+
+fn git_source(source: &str) -> Result<(&str, &str), String> {
+    let value = source
+        .strip_prefix("git:")
+        .ok_or("Git source must start with `git:`")?;
+    let (url, subdir) = value.split_once('#').unwrap_or((value, ""));
+    if url.is_empty() {
+        return Err("Git source has no URL".into());
+    }
+    let path = Path::new(subdir);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Err("Git package subdirectory must be a relative path without `..`".into());
+    }
+    Ok((url, subdir))
+}
+
+fn git_stage(root: &Path, name: &str, purpose: &str) -> PathBuf {
+    root.join(".kalcite")
+        .join(format!(".{name}-{purpose}-{}", std::process::id()))
+}
+
+fn run_git(root: &Path, args: &[&str]) -> Result<String, String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .map_err(|error| format!("could not run git: {error}"))?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+    }
+}
+
+fn fetch_git(root: &Path, stage: &Path, url: &str, reference: &str) -> Result<String, String> {
+    if stage.exists() {
+        fs::remove_dir_all(stage).map_err(|error| error.to_string())?;
+    }
+    fs::create_dir_all(stage.parent().ok_or("Git stage has no parent")?)
+        .map_err(|error| error.to_string())?;
+    let stage_text = stage.to_str().ok_or("Git stage path is not UTF-8")?;
+    run_git(root, &["init", "--quiet", stage_text])?;
+    let result = (|| {
+        run_git(stage, &["remote", "add", "origin", url])?;
+        run_git(stage, &["fetch", "--depth", "1", "origin", reference])?;
+        run_git(stage, &["rev-parse", "FETCH_HEAD^{commit}"])
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(stage);
+    }
+    result
+}
+
+fn resolve_git_revision(
+    root: &Path,
+    name: &str,
+    source: &str,
+    reference: &str,
+) -> Result<String, String> {
+    let (url, _) = git_source(source)?;
+    let stage = git_stage(root, name, "resolve");
+    let result = fetch_git(root, &stage, url, reference);
+    let _ = fs::remove_dir_all(stage);
+    result
+}
+
+fn materialize_git_package(
+    root: &Path,
+    name: &str,
+    package: &kalcite_package::Package,
+) -> Result<String, String> {
+    let (url, subdir) = git_source(&package.source)?;
+    let stage = git_stage(root, name, "fetch");
+    let result = (|| {
+        fetch_git(root, &stage, url, &package.revision)?;
+        run_git(&stage, &["checkout", "--quiet", "--detach", "FETCH_HEAD"])?;
+        let source = stage.join(subdir);
+        if !source.is_dir() {
+            return Err(format!(
+                "package path `{subdir}` is not a directory in the selected commit"
+            ));
+        }
+        let destination = root.join(".kalcite/packages").join(name);
+        kalcite_package::materialize(&source, &destination)?;
+        kalcite_package::checksum_path(&destination)
+    })();
+    let _ = fs::remove_dir_all(stage);
+    result
 }
 
 fn test_command(args: &[String]) -> ExitCode {

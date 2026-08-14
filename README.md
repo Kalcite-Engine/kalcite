@@ -76,6 +76,9 @@ The beginner-friendly multi-script system is described in [`docs/SCRIPTING.md`](
 
 See [`docs/LANGUAGE.md`](docs/LANGUAGE.md), [`docs/ENGINE.md`](docs/ENGINE.md), [`docs/OBJECT_FORMAT.md`](docs/OBJECT_FORMAT.md), and [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
+Dependencies are managed by **Kally**. It resolves the requested Git branch or
+tag to an immutable commit in `kalcite.lock`; see [`docs/PACKAGES.md`](docs/PACKAGES.md).
+
 ## Building a NumWorks `.nwa` application
 
 The initial native backend compiles the Pong example into a VM-free EADK application:

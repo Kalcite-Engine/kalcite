@@ -11,6 +11,9 @@ pub struct Lock {
 #[derive(Clone, Default)]
 pub struct Package {
     pub source: String,
+    /// The mutable Git branch or tag requested by the manifest/CLI. `revision`
+    /// is always the immutable commit selected from this reference.
+    pub reference: String,
     pub revision: String,
     pub checksum: String,
 }
@@ -192,6 +195,7 @@ pub fn load(path: &Path) -> Result<Lock, String> {
         let package = lock.packages.get_mut(name).unwrap();
         match key.trim() {
             "source" => package.source = value.trim().to_string(),
+            "reference" => package.reference = value.trim().to_string(),
             "revision" => package.revision = value.trim().to_string(),
             "checksum" => package.checksum = value.trim().to_string(),
             other => return Err(format!("unknown lockfile key: {other}")),
@@ -201,7 +205,7 @@ pub fn load(path: &Path) -> Result<Lock, String> {
 }
 pub fn save(path: &Path, lock: &Lock) -> Result<(), String> {
     let mut out = format!(
-        "# Kalcite lockfile - generated, do not edit\nversion={}\n",
+        "# Kally lockfile - generated, do not edit\nversion={}\n",
         lock.version.max(1)
     );
     for (name, p) in &lock.packages {
@@ -209,8 +213,8 @@ pub fn save(path: &Path, lock: &Lock) -> Result<(), String> {
             return Err(format!("invalid package name `{name}`"));
         }
         out.push_str(&format!(
-            "\n[{name}]\nsource={}\nrevision={}\nchecksum={}\n",
-            p.source, p.revision, p.checksum
+            "\n[{name}]\nsource={}\nreference={}\nrevision={}\nchecksum={}\n",
+            p.source, p.reference, p.revision, p.checksum
         ));
     }
     fs::write(path, out).map_err(|e| e.to_string())
@@ -248,6 +252,30 @@ mod tests {
         let before = checksum_path(&source).unwrap();
         materialize(&source, &cache).unwrap();
         assert_eq!(before, checksum_path(&cache).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn lockfile_preserves_git_reference_and_commit() {
+        let root =
+            std::env::temp_dir().join(format!("kalcite-package-lock-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("kalcite.lock");
+        let mut lock = Lock::default();
+        lock.packages.insert(
+            "ui".into(),
+            Package {
+                source: "git:https://example.invalid/kalcite-packages.git#packages/ui".into(),
+                reference: "v0.3.0".into(),
+                revision: "0123456789abcdef".into(),
+                checksum: "deadbeef".into(),
+            },
+        );
+        save(&path, &lock).unwrap();
+        let restored = load(&path).unwrap();
+        let package = &restored.packages["ui"];
+        assert_eq!(package.reference, "v0.3.0");
+        assert_eq!(package.revision, "0123456789abcdef");
         fs::remove_dir_all(root).unwrap();
     }
 }
