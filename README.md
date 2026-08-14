@@ -1,49 +1,48 @@
 # Kalcite
 
-Kalcite est un langage compilé à accolades et un moteur 2D Rust conçus d’abord pour la NumWorks, puis pour Windows, Linux, macOS et WebAssembly.
+Kalcite is a brace-based compiled language and Rust 2D engine designed first for NumWorks, then for Windows, Linux, macOS, and WebAssembly.
 
-Principes : aucune VM, aucun GC, aucune allocation implicite, objets ergonomiques abaissés en structures et appels statiques, mémoire prévisible.
+Its principles are: no VM, no GC, no implicit allocation, ergonomic objects lowered to structures and static calls, and predictable memory usage.
 
 ## Formats
 
-- `.klc` — source Kalcite ;
-- `.kco` — **Kalcite Compiled Object**, objet intermédiaire versionné et validé par checksum ;
-- l’exécutable final dépend du backend : application Epsilon/NumWorks, binaire desktop ou module WASM.
+- `.klc` — Kalcite source;
+- `.kco` — **Kalcite Compiled Object**, a versioned intermediate object validated by checksum;
+- the final executable depends on the backend: an Epsilon/NumWorks application, desktop binary, or WASM module.
 
-Un `.kco` n’est pas une VM embarquée : c’est un produit de build transportable contenant actuellement le code Rust `no_std` généré. Les versions suivantes utiliseront des sections HIR/MIR, assets et relocations.
+A `.kco` is not an embedded VM: it is a portable build product that currently contains generated `no_std` Rust code. Future versions will use HIR/MIR sections, assets, and relocations.
 
-## Workspace Rust
+## Rust workspace
 
 ```text
-crates/kalcite-syntax              Lexer, parser et AST
-crates/kalcite-object              Format binaire .kco
-crates/kalcite-linter              Règles de lint réutilisables
-crates/kalcite-project             Découverte multi-script, manifestes et diagnostics de projet
-crates/kalcite-compiler            Analyse et orchestration des backends
-crates/kalcite-hir                 HIR typée et corps de fonctions
-crates/kalcite-mir                 MIR portable + budget mémoire
-crates/kalcite-backend-rust        Génération Rust native générique
-crates/kalcite-backend-numworks    Adaptation EADK / NumWorks
-crates/kalcite-backend-desktop     Smoke-test desktop sans dépendances
-crates/kalcite-runtime-core        Pools statiques + handles générationnels no_std
-crates/kalcite-cli                 CLI `kalcite`
-crates/kalcite-engine-core         Moteur portable no_std
-crates/kalcite-engine-assets       Codecs et formats d’assets
-crates/kalcite-platform-api        Contrats de plateforme
-crates/kalcite-platform-headless   Backend de tests
-crates/kalcite-platform-numworks   ABI et backend NumWorks
-editors/vscode-kalcite             Extension VS Code
-editors/zed-kalcite                Extension Zed
-editors/tree-sitter-kalcite        Grammaire partagée pour Zed
-examples/pong                      Jeu exemple
+crates/kalcite-syntax              Lexer, parser, and AST
+crates/kalcite-object              .kco binary format
+crates/kalcite-linter              Reusable lint rules
+crates/kalcite-project             Multi-script discovery, manifests, and project diagnostics
+crates/kalcite-compiler            Analysis and backend orchestration
+crates/kalcite-hir                 Typed HIR and function bodies
+crates/kalcite-mir                 Portable MIR and memory budget
+crates/kalcite-backend-rust        Generic native Rust generation
+crates/kalcite-backend-numworks    EADK / NumWorks adapter
+crates/kalcite-backend-desktop     Dependency-free desktop smoke-test backend
+crates/kalcite-runtime-core        no_std static pools and generational handles
+crates/kalcite-cli                 `kalcite` CLI
+crates/kalcite-engine-core         Portable no_std engine
+crates/kalcite-engine-assets       Asset formats and codecs
+crates/kalcite-platform-api        Platform contracts
+crates/kalcite-platform-headless   Test backend
+crates/kalcite-platform-numworks   NumWorks ABI and backend
+editors/vscode-kalcite             VS Code extension
+editors/zed-kalcite                Zed extension
+editors/tree-sitter-kalcite        Shared grammar for Zed
+examples/pong                      Example game
 ```
 
-Les crates sont maintenues ensemble dans ce workspace afin que le compilateur,
-le runtime, le moteur et les backends puissent évoluer dans un même commit.
-Les sites de documentation et vitrine sont les seuls sous-modules du dépôt ;
-voir [`REPOSITORIES.md`](REPOSITORIES.md).
+The crates are maintained together in this workspace so the compiler, runtime,
+engine, and backends can evolve in one commit. The documentation and showcase
+sites are the repository's only submodules; see [`REPOSITORIES.md`](REPOSITORIES.md).
 
-## Utilisation
+## Usage
 
 ```bash
 cargo test --workspace
@@ -57,7 +56,7 @@ cargo run -p kalcite-cli -- emit-mir examples/pong/src/main.klc
 cargo run -p kalcite-cli -- run examples/pong/src/main.klc
 ```
 
-Le dernier appel produit `examples/pong/src/main.kco`.
+The last command creates `examples/pong/src/main.kco`.
 
 ## NumWorks
 
@@ -66,21 +65,21 @@ rustup target add thumbv7em-none-eabihf
 cargo build -p kalcite-platform-numworks --target thumbv7em-none-eabihf --release
 ```
 
-Le système multi-script orienté débutant est décrit dans [`docs/SCRIPTING.md`](docs/SCRIPTING.md).
+The beginner-friendly multi-script system is described in [`docs/SCRIPTING.md`](docs/SCRIPTING.md).
 
-Voir [`docs/LANGUAGE.md`](docs/LANGUAGE.md), [`docs/ENGINE.md`](docs/ENGINE.md), [`docs/OBJECT_FORMAT.md`](docs/OBJECT_FORMAT.md) et [`docs/ROADMAP.md`](docs/ROADMAP.md).
+See [`docs/LANGUAGE.md`](docs/LANGUAGE.md), [`docs/ENGINE.md`](docs/ENGINE.md), [`docs/OBJECT_FORMAT.md`](docs/OBJECT_FORMAT.md), and [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
-## Produire une application NumWorks `.nwa`
+## Building a NumWorks `.nwa` application
 
-Le backend natif initial compile l’exemple Pong en application EADK sans VM :
+The initial native backend compiles the Pong example into a VM-free EADK application:
 
 ```bash
 cargo run -p kalcite-cli -- build-nwa examples/pong/src/main.klc --name Pong -o examples/pong/Pong.nwa
 ```
 
-Prérequis : Rustup, Node.js et `npx`. La conversion de l’icône utilise `nwlink@0.0.19` (ou un `nwlink` déjà installé). Le projet Rust généré reste disponible dans `.kalcite/nwa/main/` pour inspection.
+Requirements: Rustup, Node.js, and `npx`. Icon conversion uses `nwlink@0.0.19` (or an installed `nwlink`). The generated Rust project remains available in `.kalcite/nwa/main/` for inspection.
 
-Pour uniquement générer les sources natives :
+To generate native sources only:
 
 ```bash
 cargo run -p kalcite-cli -- build-nwa examples/pong/src/main.klc --name Pong --no-build
@@ -104,9 +103,9 @@ cargo run -p kalcite-cli -- build-app examples/pong/src/main.klc --target numwor
 See `docs/COMPILER_PIPELINE.md`, `docs/BACKENDS.md`, `docs/MEMORY_MODEL.md`, and `docs/NODES.md`.
 
 
-## Mémoire bornée
+## Bounded memory
 
-Le langage expose maintenant les pools et handles directement :
+The language exposes pools and handles directly:
 
 ```klc
 @pool(32)
@@ -118,15 +117,15 @@ private Pool[Bullet; 32] bullets;
 private Handle[Bullet] bullet;
 ```
 
-`Pool[T; N]` devient un `StaticPool<T, N>` sans heap. Les handles sont générationnels et rejettent les références périmées. `kalcite emit-mir` affiche aussi une estimation du budget statique.
+`Pool[T; N]` becomes a heap-free `StaticPool<T, N>`. Handles are generational and reject stale references. `kalcite emit-mir` also displays an estimated static budget.
 
-Le backend desktop de smoke-test permet de compiler le même jeu sans dépendance graphique :
+The desktop smoke-test backend compiles the same game without a graphics dependency:
 
 ```bash
 cargo run -p kalcite-cli -- run examples/pong/src/main.klc
 ```
 
-Il écrit `kalcite-frame.ppm`, utile pour vérifier rapidement le pipeline de compilation avant un build NumWorks.
+It writes `kalcite-frame.ppm`, which is useful for quickly validating the compilation pipeline before a NumWorks build.
 
 ## Desktop Play mode
 
