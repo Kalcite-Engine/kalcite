@@ -111,6 +111,7 @@ const KNOWN_CAPABILITIES: &[&str] = &[
     "gamepad",
     "filesystem",
     "network",
+    "process",
     "threads",
     "audio",
     "clipboard",
@@ -204,7 +205,7 @@ pub fn target_capabilities(target: &str) -> &'static [&'static str] {
         "numworks" => &["keyboard"],
         // The desktop runner currently exposes only the services it actually
         // implements. Rich desktop UI capabilities remain planned work.
-        "desktop" => &["window", "keyboard", "filesystem"],
+        "desktop" => &["window", "keyboard", "filesystem", "network", "process"],
         // Web is a declared object target, not a shipped platform backend.
         "web" | "portable" => &[],
         _ => &[],
@@ -1083,22 +1084,25 @@ pub fn validate_host_libraries(
                 continue;
             };
             let name = use_decl.path.join(".");
-            let required = match name.as_str() {
-                "std.fs" => Some("filesystem"),
-                _ => None,
+            let required: &[&str] = match name.as_str() {
+                "std.fs" => &["filesystem"],
+                "std.http" => &["network"],
+                "std.git" => &["filesystem", "network", "process"],
+                _ => &[],
             };
-            if let Some(capability) = required
-                && !manifest
+            for capability in required {
+                if !manifest
                     .capabilities
                     .iter()
                     .any(|value| value == capability)
-            {
-                out.push(diag(
-                    Severity::Error,
-                    "KLP1010",
-                    &script.path,
-                    format!("library `{name}` requires manifest capability `{capability}`"),
-                ));
+                {
+                    out.push(diag(
+                        Severity::Error,
+                        "KLP1010",
+                        &script.path,
+                        format!("library `{name}` requires manifest capability `{capability}`"),
+                    ));
+                }
             }
         }
     }
@@ -2704,7 +2708,7 @@ mod tests {
         assert_eq!(report.required_capabilities, ["keyboard", "window"]);
         assert_eq!(
             report.provided_capabilities,
-            ["window", "keyboard", "filesystem"]
+            ["window", "keyboard", "filesystem", "network", "process"]
         );
         assert_eq!(report.scene_node_count, 2);
         assert_eq!(report.scene_autoload_count, 1);

@@ -1,0 +1,8 @@
+// KLC-owned lockfile metadata validation and deterministic fingerprinting.
+public bool kally_lock_version_supported(u32 version) { return version == 1; }
+public u32 kally_lock_fingerprint(u32 source, u32 revision, u32 checksum) {
+    u32 value = 2166136261;
+    value = (value ^ source) * 16777619;
+    value = (value ^ revision) * 16777619;
+    return (value ^ checksum) * 16777619;
+}

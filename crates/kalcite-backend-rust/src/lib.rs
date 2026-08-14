@@ -16,7 +16,7 @@ impl core::fmt::Display for EmitError {
 
 pub fn emit_game(program: &Program) -> Result<String, EmitError> {
     let mut out = String::from(
-        "use crate::platform::{Audio, Color, Draw, Hardware, Input, Key, Physics, Storage, System, Vec2fx};\nuse crate::project_data::ProjectSave;\nuse crate::runtime::{Handle, SignalQueue, StaticPool};\nuse crate::stdlib::{Bits, Checksum, ColorUtil, Fixed, Fs, Hash, Math, MsgPack, Save};\n\n",
+        "use crate::platform::{Audio, Color, Draw, Hardware, Input, Key, Physics, Storage, System, Vec2fx};\nuse crate::project_data::ProjectSave;\nuse crate::runtime::{Handle, SignalQueue, StaticPool};\nuse crate::stdlib::{Bits, Checksum, ColorUtil, Fixed, Fs, Git, Hash, Http, Math, MsgPack, Save};\n\n",
     );
     for constant in &program.constants {
         if let Some(value) = &constant.init {
