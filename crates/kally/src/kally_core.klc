@@ -24,6 +24,62 @@ public u32 kally_source_kind(String[512] source) {
     return 0;
 }
 
+public bool kally_hex_byte(u8 byte) {
+    return (byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 70) || (byte >= 97 && byte <= 102);
+}
+
+// Git refs recorded in a lockfile are immutable object IDs, never branch
+// names.  Keeping this test in KLC makes the resolver's invariant explicit.
+public bool kally_revision_valid(String[128] revision) {
+    u32 length = Text.length(revision);
+    if length < 7 || length > 64 { return false; }
+    u32 index = 0;
+    while index < length {
+        if !kally_hex_byte(Text.byte_at(revision, index)) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+public bool kally_checksum_valid(String[17] checksum) {
+    u32 length = Text.length(checksum);
+    if length != 16 { return false; }
+    u32 index = 0;
+    while index < length {
+        if !kally_hex_byte(Text.byte_at(checksum, index)) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+public bool kally_git_source_valid(String[512] source) {
+    if kally_source_kind(source) != 1 { return false; }
+    u32 length = Text.length(source);
+    u32 index = 4;
+    bool in_subdir = false;
+    u32 dots = 0;
+    while index < length {
+        u8 byte = Text.byte_at(source, index);
+        if byte == 32 || byte == 9 || byte < 32 { return false; }
+        if byte == 35 {
+            if in_subdir || index == 4 || index + 1 >= length { return false; }
+            if Text.byte_at(source, index + 1) == 47 || Text.byte_at(source, index + 1) == 92 { return false; }
+            in_subdir = true;
+            dots = 0;
+        } else if in_subdir {
+            if byte == 92 { return false; }
+            if byte == 47 {
+                if dots == 2 { return false; }
+                dots = 0;
+            } else {
+                if byte == 46 { dots += 1; } else { dots = 0; }
+            }
+        }
+        index += 1;
+    }
+    return dots != 2;
+}
+
 // `=` belongs to Kally's grammar, not to its filesystem adapter.
 public u32 kally_lock_value_start(String[512] line) {
     u32 index = 0;

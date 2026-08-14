@@ -93,6 +93,21 @@ pub fn source_payload(source: &str) -> Result<&str, String> {
         SourceKind::Path => Ok(&source[5..]),
     }
 }
+
+pub fn git_source_valid(source: &str) -> bool {
+    source.len() <= 512
+        && klc_core::kally_git_source_valid(klc_runtime::BoundedString::<512>::from_str(source))
+}
+
+pub fn revision_valid(revision: &str) -> bool {
+    revision.len() <= 128
+        && klc_core::kally_revision_valid(klc_runtime::BoundedString::<128>::from_str(revision))
+}
+
+pub fn checksum_valid(checksum: &str) -> bool {
+    checksum.len() <= 17
+        && klc_core::kally_checksum_valid(klc_runtime::BoundedString::<17>::from_str(checksum))
+}
 pub fn valid_name(name: &str) -> bool {
     klc_core::kally_valid_name(klc_runtime::BoundedString::<65>::from_str(name))
 }
@@ -319,8 +334,24 @@ pub fn verify(lock: &Lock, cache: &Path) -> Result<(), String> {
         return Err(format!("unsupported lockfile version {}", lock.version));
     }
     for (name, p) in &lock.packages {
-        if p.revision.is_empty() {
-            return Err(format!("package `{name}` is not pinned to a revision"));
+        match source_kind(&p.source)? {
+            SourceKind::Git if !git_source_valid(&p.source) => {
+                return Err(format!("package `{name}` has an invalid Git source"));
+            }
+            SourceKind::Git if !revision_valid(&p.revision) => {
+                return Err(format!(
+                    "package `{name}` is not pinned to an immutable Git revision"
+                ));
+            }
+            SourceKind::Path if p.revision != "local" => {
+                return Err(format!(
+                    "local package `{name}` must use the local revision marker"
+                ));
+            }
+            _ => {}
+        }
+        if !p.checksum.is_empty() && !checksum_valid(&p.checksum) {
+            return Err(format!("package `{name}` has an invalid checksum"));
         }
         let path = cache.join(name);
         if path.exists() && !p.checksum.is_empty() {
@@ -387,6 +418,19 @@ mod tests {
         );
         assert_eq!(source_kind("path:packages/demo").unwrap(), SourceKind::Path);
         assert!(source_kind("https://example.invalid/p.git").is_err());
+        assert!(git_source_valid(
+            "git:https://example.invalid/p.git#packages/demo"
+        ));
+        assert!(!git_source_valid(
+            "git:https://example.invalid/p.git#../outside"
+        ));
+        assert!(!git_source_valid(
+            "git:https://example.invalid/p.git#/absolute"
+        ));
+        assert!(revision_valid("0123456789abcdef"));
+        assert!(!revision_valid("branch/main"));
+        assert!(checksum_valid("0123456789abcdef"));
+        assert!(!checksum_valid("not-a-checksum"));
 
         let root = std::env::temp_dir().join(format!("kally-klc-core-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();

@@ -1089,22 +1089,11 @@ fn lock_kally_checksums(root: &Path, wanted: Option<&str>) -> Result<(), String>
 }
 
 fn git_source(source: &str) -> Result<(&str, &str), String> {
-    if kally::source_kind(source)? != kally::SourceKind::Git {
-        return Err("Git source must start with `git:`".into());
+    if !kally::git_source_valid(source) {
+        return Err("Git source must be a safe `git:URL[#SUBDIR]` value".into());
     }
     let value = kally::source_payload(source)?;
     let (url, subdir) = value.split_once('#').unwrap_or((value, ""));
-    if url.is_empty() {
-        return Err("Git source has no URL".into());
-    }
-    let path = Path::new(subdir);
-    if path.is_absolute()
-        || path
-            .components()
-            .any(|part| matches!(part, std::path::Component::ParentDir))
-    {
-        return Err("Git package subdirectory must be a relative path without `..`".into());
-    }
     Ok((url, subdir))
 }
 
