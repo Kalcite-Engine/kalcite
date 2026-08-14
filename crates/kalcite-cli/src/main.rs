@@ -1114,6 +1114,10 @@ fn sync_kally_packages(root: &Path) -> Result<usize, String> {
             }
         }
     }
+    // Materialization is the only point at which a source-tree checksum is
+    // meaningful. Persist it before returning so a fresh-manifest sync creates
+    // a fully reproducible lock in one command.
+    lock_kally_checksums(root, None)?;
     Ok(lock.packages.len())
 }
 
@@ -2130,7 +2134,7 @@ mod tests {
         ui_settings_command,
     };
     use kalcite_project::{AssetReport, ProjectReport};
-    use std::fs;
+    use std::{fs, process::Command};
 
     #[test]
     fn numworks_default_name_is_ascii_and_bounded() {
@@ -2200,6 +2204,48 @@ mod tests {
         assert_eq!(lock.packages["demo"].revision, "local");
         assert!(!lock.packages["demo"].checksum.is_empty());
         assert!(root.join("kally.lock").is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn sync_resolves_and_materializes_an_unlocked_git_manifest() {
+        let root = std::env::temp_dir().join(format!("kally-git-sync-{}", std::process::id()));
+        let source = root.join("source");
+        let project = root.join("project");
+        fs::create_dir_all(source.join("package")).unwrap();
+        fs::write(source.join("package/lib.klc"), "class GitPackage {}").unwrap();
+        for args in [
+            vec!["init", "--quiet"],
+            vec!["config", "user.email", "tests@example.invalid"],
+            vec!["config", "user.name", "Kally tests"],
+            vec!["add", "."],
+            vec!["commit", "--quiet", "-m", "initial"],
+        ] {
+            assert!(
+                Command::new("git")
+                    .args(args)
+                    .current_dir(&source)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        fs::create_dir_all(&project).unwrap();
+        let mut manifest = kally::Manifest::default();
+        manifest.version = 1;
+        manifest.packages.insert(
+            "demo".into(),
+            kally::ManifestPackage {
+                source: format!("git:{}#package", source.display()),
+                reference: "HEAD".into(),
+            },
+        );
+        kally::save_manifest(&project.join("kally.toml"), &manifest).unwrap();
+        assert_eq!(super::sync_kally_packages(&project).unwrap(), 1);
+        let lock = kally::load(&project.join("kally.lock")).unwrap();
+        assert!(kally::revision_valid(&lock.packages["demo"].revision));
+        assert!(!lock.packages["demo"].checksum.is_empty());
+        assert!(project.join(".kally/packages/demo/lib.klc").is_file());
         fs::remove_dir_all(root).unwrap();
     }
 }
