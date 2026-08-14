@@ -3,6 +3,56 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+
+// Minimal allocation-free ABI used by the KLC module generated in build.rs.
+// Rust owns filesystem/Git only; policy and lockfile syntax are KLC code.
+mod klc_runtime {
+    #[derive(Clone, Copy)]
+    pub struct BoundedString<const N: usize> {
+        pub len: u16,
+        pub bytes: [u8; N],
+    }
+    impl<const N: usize> BoundedString<N> {
+        pub fn from_str(value: &str) -> Self {
+            let mut result = Self {
+                len: 0,
+                bytes: [0; N],
+            };
+            let count = value.len().min(N).min(u16::MAX as usize);
+            result.bytes[..count].copy_from_slice(&value.as_bytes()[..count]);
+            result.len = count as u16;
+            result
+        }
+        #[inline]
+        pub fn length(&self) -> u32 {
+            self.len as u32
+        }
+        #[inline]
+        pub fn byte_at(&self, index: u32) -> u8 {
+            self.bytes
+                .get(index as usize)
+                .copied()
+                .filter(|_| index < self.len as u32)
+                .unwrap_or(0)
+        }
+    }
+    pub struct Text;
+    impl Text {
+        #[inline]
+        pub fn length<const N: usize>(value: BoundedString<N>) -> u32 {
+            value.length()
+        }
+        #[inline]
+        pub fn byte_at<const N: usize>(value: BoundedString<N>, index: u32) -> u8 {
+            value.byte_at(index)
+        }
+    }
+}
+
+#[allow(dead_code, unused_mut, unused_parens)]
+mod klc_core {
+    include!(concat!(env!("OUT_DIR"), "/kally_core.rs"));
+}
 #[derive(Default)]
 pub struct Lock {
     pub version: u32,
@@ -18,11 +68,7 @@ pub struct Package {
     pub checksum: String,
 }
 pub fn valid_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 64
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    klc_core::kally_valid_name(klc_runtime::BoundedString::<65>::from_str(name))
 }
 pub fn checksum(data: &[u8]) -> String {
     let mut h = 14695981039346656037u64;
@@ -173,18 +219,32 @@ pub fn load(path: &Path) -> Result<Lock, String> {
     let mut current = None;
     for raw in text.lines() {
         let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
+        if line.len() > 512 {
+            return Err("lockfile line exceeds Kally's 512-byte limit".into());
+        }
+        let kind =
+            klc_core::kally_lock_line_kind(klc_runtime::BoundedString::<512>::from_str(line));
+        if kind == 0 {
             continue;
         }
-        if let Some(v) = line.strip_prefix("version=") {
+        if kind == 1 {
+            let v = line
+                .strip_prefix("version=")
+                .ok_or("invalid lockfile version")?;
             lock.version = v.parse().map_err(|_| "invalid lockfile version")?;
             continue;
         }
-        if line.starts_with('[') && line.ends_with(']') {
+        if kind == 2 {
             let name = line[1..line.len() - 1].to_string();
+            if !valid_name(&name) {
+                return Err(format!("invalid package name `{name}`"));
+            }
             lock.packages.entry(name.clone()).or_default();
             current = Some(name);
             continue;
+        }
+        if !(3..=6).contains(&kind) {
+            return Err(format!("invalid lockfile line: {line}"));
         }
         let Some((key, value)) = line.split_once('=') else {
             return Err(format!("invalid lockfile line: {line}"));
@@ -193,12 +253,12 @@ pub fn load(path: &Path) -> Result<Lock, String> {
             return Err("package property outside package section".into());
         };
         let package = lock.packages.get_mut(name).unwrap();
-        match key.trim() {
-            "source" => package.source = value.trim().to_string(),
-            "reference" => package.reference = value.trim().to_string(),
-            "revision" => package.revision = value.trim().to_string(),
-            "checksum" => package.checksum = value.trim().to_string(),
-            other => return Err(format!("unknown lockfile key: {other}")),
+        match kind {
+            3 if key.trim() == "source" => package.source = value.trim().to_string(),
+            4 if key.trim() == "reference" => package.reference = value.trim().to_string(),
+            5 if key.trim() == "revision" => package.revision = value.trim().to_string(),
+            6 if key.trim() == "checksum" => package.checksum = value.trim().to_string(),
+            _ => return Err(format!("invalid lockfile key: {}", key.trim())),
         }
     }
     Ok(lock)
@@ -220,6 +280,9 @@ pub fn save(path: &Path, lock: &Lock) -> Result<(), String> {
     fs::write(path, out).map_err(|e| e.to_string())
 }
 pub fn verify(lock: &Lock, cache: &Path) -> Result<(), String> {
+    if !klc_core::kally_lock_version_supported(lock.version) {
+        return Err(format!("unsupported lockfile version {}", lock.version));
+    }
     for (name, p) in &lock.packages {
         if p.revision.is_empty() {
             return Err(format!("package `{name}` is not pinned to a revision"));
@@ -275,6 +338,20 @@ mod tests {
         let package = &restored.packages["ui"];
         assert_eq!(package.reference, "v0.3.0");
         assert_eq!(package.revision, "0123456789abcdef");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn klc_core_rejects_invalid_package_names_and_lock_keys() {
+        assert!(valid_name("package-42"));
+        assert!(!valid_name("package/name"));
+        assert!(!valid_name(&"a".repeat(65)));
+
+        let root = std::env::temp_dir().join(format!("kally-klc-core-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("kally.lock");
+        fs::write(&path, "version=1\n[demo]\nunknown=value\n").unwrap();
+        assert!(load(&path).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 }

@@ -1,6 +1,37 @@
 #![allow(dead_code)]
 use crate::platform::{Color, Storage, Vec2fx};
 
+/// UTF-8 bytes in caller-owned, fixed-capacity storage.  KLC strings never
+/// allocate: input exceeding the capacity is deliberately truncated.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct BoundedString<const N: usize> { pub len: u16, pub bytes: [u8; N] }
+impl<const N: usize> Default for BoundedString<N> { fn default() -> Self { Self { len: 0, bytes: [0; N] } } }
+impl<const N: usize> BoundedString<N> {
+    pub fn from_str(value: &str) -> Self {
+        let mut result = Self::default();
+        let count = value.len().min(N).min(u16::MAX as usize);
+        result.bytes[..count].copy_from_slice(&value.as_bytes()[..count]);
+        result.len = count as u16;
+        result
+    }
+    #[inline] pub fn length(&self) -> u32 { self.len as u32 }
+    #[inline] pub fn byte_at(&self, index: u32) -> u8 { self.bytes.get(index as usize).copied().filter(|_| index < self.len as u32).unwrap_or(0) }
+    #[inline] pub fn set_byte(&mut self, index: u32, value: u8) -> bool { if let Some(slot) = self.bytes.get_mut(index as usize) { *slot = value; if index >= self.len as u32 { self.len = (index + 1).min(u16::MAX as u32) as u16; } true } else { false } }
+    #[inline] pub fn push_byte(&mut self, value: u8) -> bool { self.set_byte(self.len as u32, value) }
+    pub fn equals(&self, other: &Self) -> bool { self.len == other.len && self.bytes[..self.len as usize] == other.bytes[..other.len as usize] }
+}
+
+/// Operations exposed to KLC for `String[N]`; keeping them here gives the
+/// language a portable, allocation-free string surface on every target.
+pub struct Text;
+impl Text {
+    #[inline] pub fn length<const N: usize>(value: BoundedString<N>) -> u32 { value.length() }
+    #[inline] pub fn byte_at<const N: usize>(value: BoundedString<N>, index: u32) -> u8 { value.byte_at(index) }
+    #[inline] pub fn set_byte<const N: usize>(value: &mut BoundedString<N>, index: u32, byte: u8) -> bool { value.set_byte(index, byte) }
+    #[inline] pub fn push_byte<const N: usize>(value: &mut BoundedString<N>, byte: u8) -> bool { value.push_byte(byte) }
+    #[inline] pub fn equals<const N: usize>(left: BoundedString<N>, right: BoundedString<N>) -> bool { left.equals(&right) }
+}
+
 pub struct Math;
 impl Math {
     #[inline] pub fn clamp_i16(v:i16,lo:i16,hi:i16)->i16 { v.clamp(lo,hi) }
@@ -61,6 +92,10 @@ impl Fs {
     pub fn write_u32(path: &str, value: u32) -> bool { std::fs::write(path, value.to_le_bytes()).is_ok() }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     pub fn write_u32(_: &str, _: u32) -> bool { false }
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    pub fn read_text<const N: usize>(path: &str) -> BoundedString<N> { std::fs::read(path).ok().map(|bytes| { let mut value = BoundedString::default(); let count = bytes.len().min(N).min(u16::MAX as usize); value.bytes[..count].copy_from_slice(&bytes[..count]); value.len = count as u16; value }).unwrap_or_default() }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    pub fn read_text<const N: usize>(_: &str) -> BoundedString<N> { BoundedString::default() }
 }
 
 pub struct Http;

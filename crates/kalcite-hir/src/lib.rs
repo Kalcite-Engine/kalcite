@@ -78,6 +78,7 @@ pub enum Type {
     I32,
     Fx8,
     Vec2fx,
+    BoundedString(usize),
     FixedArray(Box<Type>, usize),
     Handle(Box<Type>),
     Pool(Box<Type>, usize),
@@ -290,6 +291,11 @@ pub fn parse_type(text: &str) -> Type {
         "i32" => Type::I32,
         "fx8" => Type::Fx8,
         "Vec2fx" => Type::Vec2fx,
+        _ if t.starts_with("String[") && t.ends_with(']') => t[7..t.len() - 1]
+            .trim()
+            .parse()
+            .map(Type::BoundedString)
+            .unwrap_or(Type::Named(t.into())),
         _ if t.starts_with('[') && t.ends_with(']') => {
             let inner = &t[1..t.len() - 1];
             if let Some((ty, n)) = inner.rsplit_once(';') {
@@ -843,6 +849,12 @@ mod bounded_type_tests {
             parse_type("Pool[Bullet; 32]"),
             Type::Pool(Box::new(Type::Named("Bullet".into())), 32)
         );
+    }
+
+    #[test]
+    fn parses_bounded_strings() {
+        assert_eq!(parse_type("String[512]"), Type::BoundedString(512));
+        assert_eq!(parse_type("String[ 8 ]"), Type::BoundedString(8));
     }
 }
 

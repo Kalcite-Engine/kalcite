@@ -251,6 +251,12 @@ version = "0.14.0"
 [[package]]
 name = "kally"
 version = "0.14.0"
+dependencies = [
+ "kalcite-backend-rust",
+ "kalcite-hir",
+ "kalcite-mir",
+ "kalcite-syntax",
+]
 
 [[package]]
 name = "miniz_oxide"

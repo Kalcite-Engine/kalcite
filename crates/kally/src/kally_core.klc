@@ -1,0 +1,31 @@
+// This file is compiled into the Kally executable at build time.  Keep its
+// input bounded: Kally's lockfile format is intentionally line-oriented.
+public bool kally_lock_version_supported(u32 version) { return version == 1; }
+
+public bool kally_valid_name(String[65] name) {
+    u32 length = Text.length(name);
+    if length == 0 || length > 64 { return false; }
+    u32 index = 0;
+    while index < length {
+        u8 byte = Text.byte_at(name, index);
+        bool allowed = (byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) || byte == 45 || byte == 95;
+        if !allowed { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// 0=blank/comment, 1=version, 2=package section, 3..6=properties, 255=bad.
+public u32 kally_lock_line_kind(String[512] line) {
+    u32 length = Text.length(line);
+    if length == 0 { return 0; }
+    u8 first = Text.byte_at(line, 0);
+    if first == 35 { return 0; }
+    if first == 91 && Text.byte_at(line, length - 1) == 93 { return 2; }
+    if length == 9 && Text.byte_at(line, 0) == 118 && Text.byte_at(line, 1) == 101 && Text.byte_at(line, 2) == 114 && Text.byte_at(line, 3) == 115 && Text.byte_at(line, 4) == 105 && Text.byte_at(line, 5) == 111 && Text.byte_at(line, 6) == 110 && Text.byte_at(line, 7) == 61 && Text.byte_at(line, 8) == 49 { return 1; }
+    if length >= 7 && Text.byte_at(line, 0) == 115 && Text.byte_at(line, 1) == 111 && Text.byte_at(line, 2) == 117 && Text.byte_at(line, 3) == 114 && Text.byte_at(line, 4) == 99 && Text.byte_at(line, 5) == 101 && Text.byte_at(line, 6) == 61 { return 3; }
+    if length >= 10 && Text.byte_at(line, 0) == 114 && Text.byte_at(line, 1) == 101 && Text.byte_at(line, 2) == 102 && Text.byte_at(line, 3) == 101 && Text.byte_at(line, 4) == 114 && Text.byte_at(line, 5) == 101 && Text.byte_at(line, 6) == 110 && Text.byte_at(line, 7) == 99 && Text.byte_at(line, 8) == 101 && Text.byte_at(line, 9) == 61 { return 4; }
+    if length >= 9 && Text.byte_at(line, 0) == 114 && Text.byte_at(line, 1) == 101 && Text.byte_at(line, 2) == 118 && Text.byte_at(line, 3) == 105 && Text.byte_at(line, 4) == 115 && Text.byte_at(line, 5) == 105 && Text.byte_at(line, 6) == 111 && Text.byte_at(line, 7) == 110 && Text.byte_at(line, 8) == 61 { return 5; }
+    if length >= 9 && Text.byte_at(line, 0) == 99 && Text.byte_at(line, 1) == 104 && Text.byte_at(line, 2) == 101 && Text.byte_at(line, 3) == 99 && Text.byte_at(line, 4) == 107 && Text.byte_at(line, 5) == 115 && Text.byte_at(line, 6) == 117 && Text.byte_at(line, 7) == 109 && Text.byte_at(line, 8) == 61 { return 6; }
+    return 255;
+}
