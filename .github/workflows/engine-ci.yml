@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: engine-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -15,6 +19,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Documentation-link tests validate files in this repository's docs
+          # submodule, which must be present in CI just as it is locally.
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
