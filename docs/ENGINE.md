@@ -1,71 +1,82 @@
-# Architecture du moteur Kalcite
+# Kalcite engine architecture
 
-## Objectif
+## Goal
 
-Un moteur 2D déterministe, portable et `no_std`, dont la NumWorks fixe le niveau minimal. Les backends desktop sont des outils de développement et de distribution, pas une excuse pour introduire des dépendances impossibles sur calculatrice.
+A deterministic, portable, `no_std` 2D engine whose minimum capability level is
+defined by NumWorks. Desktop backends are development and distribution tools,
+not an excuse to introduce dependencies that cannot run on a calculator.
 
-## Sous-projets indépendants
+## Workspace components
 
-1. **kalcite-syntax** : aucune dépendance moteur.
-2. **kalcite-compiler** : pipeline host, `std` autorisé.
-3. **kalcite-cli** : UX de build, rapports et conversion.
-4. **kalcite-engine-core** : `no_std`, aucune plateforme.
-5. **kalcite-engine-assets** : décodeurs streaming sans allocation.
-6. **kalcite-platform-api** : traits de framebuffer, input, temps, stockage.
-7. **kalcite-platform-numworks** : appels ABI Epsilon/nwlink.
-8. **kalcite-platform-headless** : tests et CI.
+1. **kalcite-syntax**: no engine dependency.
+2. **kalcite-compiler**: host pipeline; `std` is allowed.
+3. **kalcite-cli**: build UX, reporting, and conversion.
+4. **kalcite-engine-core**: `no_std` and platform-free.
+5. **kalcite-engine-assets**: allocation-free streaming decoders.
+6. **kalcite-platform-api**: framebuffer, input, time, and storage traits.
+7. **kalcite-platform-numworks**: Epsilon/nwlink ABI calls.
+8. **kalcite-platform-headless**: tests and CI.
 
-Futurs backends indépendants : SDL3, WebAssembly/canvas, Android, iOS et bare metal.
+Future independent backends include SDL3, WebAssembly/canvas, Android, iOS, and
+bare metal.
 
-## Boucle de jeu
+## Game loop
 
-La simulation utilise un pas fixe :
+The simulation uses a fixed timestep:
 
 ```text
-poll input -> accumulate time -> N updates fixes -> render -> present
+poll input -> accumulate time -> N fixed updates -> render -> present
 ```
 
-Sur NumWorks, le profil initial vise 30 FPS avec une simulation à 60 Hz lorsque le jeu est assez léger. Le moteur autorise 30/30 pour les jeux plus lourds.
+On NumWorks, the initial profile targets 30 FPS with a 60 Hz simulation when a
+game is light enough. The engine allows 30/30 for heavier games.
 
-## Rendu
+## Rendering
 
-- framebuffer logique RGB565 ;
-- clipping obligatoire ;
-- primitives : pixel, ligne, rectangle, blit opaque, blit color-key ;
-- tilemaps et dirty rectangles dans les prochaines étapes ;
-- aucune allocation par frame ;
-- assets déjà convertis au format cible.
+- logical RGB565 framebuffer;
+- mandatory clipping;
+- primitives: pixel, line, rectangle, opaque blit, and color-key blit;
+- tilemaps and dirty rectangles in upcoming stages;
+- no allocation per frame;
+- assets pre-converted to the target format.
 
-## Entités
+## Entities
 
-Le cœur fournit `Pool<T, N>` avec handles générationnels. Chaque type de gameplay peut avoir son propre pool, ce qui évite un ECS générique coûteux. Un ECS archetype optionnel pourra être ajouté dans un crate distinct.
+The core provides `Pool<T, N>` with generational handles. Each gameplay type can
+have its own pool, avoiding a costly generic ECS. An optional archetype ECS may
+be added in a separate crate.
 
 ## Math
 
-- coordonnées écran en `i16` ;
-- temps en ticks `u32` avec arithmétique wrap-safe ;
-- fixed-point Q8.8 et Q16.16 prévus ;
-- trigonométrie via LUT host-générée ;
-- flottants permis sur desktop mais non requis par l'API du moteur.
+- screen coordinates in `i16`;
+- time in `u32` ticks with wrap-safe arithmetic;
+- Q8.8 and Q16.16 fixed point are planned;
+- trigonometry via host-generated LUTs;
+- floating point is allowed on desktop but not required by the engine API.
 
-## Budget NumWorks de départ
+## Initial NumWorks budget
 
-Budget volontairement prudent pour le jeu, distinct du firmware et du backend :
+A deliberately conservative game budget, separate from the firmware and backend:
 
 ```text
-Framebuffer complet : backend-dépendant, éviter de le posséder côté jeu
-Stack jeu          : 16–24 KiB
-Arena de frame     : 4–8 KiB
-Pools gameplay     : 16–48 KiB
-Cache tiles/chunks : 8–24 KiB
-Marge               : obligatoire et mesurée
+Full framebuffer   : backend-dependent; games should not own it
+Game stack         : 16–24 KiB
+Frame arena        : 4–8 KiB
+Gameplay pools     : 16–48 KiB
+Tile/chunk cache   : 8–24 KiB
+Margin             : mandatory and measured
 ```
 
-La calculatrice de référence possède un Cortex-M7 à 216 MHz, 256 Kio de SRAM et 8 Mio de flash externe. L'application Rust officielle d'exemple utilise la cible `thumbv7em-none-eabihf`; l'architecture du projet suit cette cible sans supposer que toute la SRAM ou la flash est disponible pour un jeu.
+The reference calculator has a 216 MHz Cortex-M7, 256 KiB SRAM, and 8 MiB of
+external flash. The official Rust example application uses the
+`thumbv7em-none-eabihf` target; the project architecture follows this target
+without assuming that all SRAM or flash is available to a game.
 
-## Portabilité
+## Portability
 
-Les jeux dépendent uniquement de `kalcite-engine-core` et `kalcite-platform-api`. Les backends implémentent les mêmes traits. Les différences de résolution sont gérées par un viewport logique et une politique de scaling.
+Games depend only on `kalcite-engine-core` and `kalcite-platform-api`. Backends
+implement the same traits. Resolution differences are handled by a logical
+viewport and a scaling policy.
 
 ## Desktop Play runner
 

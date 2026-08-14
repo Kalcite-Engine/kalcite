@@ -1,3 +1,3 @@
 # kalcite-engine-core
 
-Sous-projet autonome de la toolchain Kalcite. Voir le super-projet pour la documentation complète.
+Part of the Kalcite toolchain. See the main repository for complete documentation.

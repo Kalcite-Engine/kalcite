@@ -1,6 +1,7 @@
 # Nodes intégrés
 
-Kalcite fournit un catalogue statique de nodes destiné au runtime et au futur éditeur. Un node intégré se déclare directement dans une scène :
+Kalcite provides a static node catalogue for the runtime and future editor. A
+built-in node is declared directly in a scene:
 
 ```ini
 [node "Hitbox" type="CollisionShape2D" parent="World/Player"]
@@ -16,24 +17,26 @@ color = Yellow
 background = Black
 ```
 
-Le compilateur valide le type du node, les propriétés autorisées, les valeurs et les propriétés obligatoires. Les transforms des parents sont additionnés sans allocation dynamique.
+The compiler validates node type, allowed and required properties, and values.
+Parent transforms are accumulated without dynamic allocation.
 
 ## Cœur
 
 - `Node`, `Game`, `Scene`
 - `Timer`
-- `Resource` reste un type de ressource et non un node de scène.
+- `Resource` remains a resource type rather than a scene node.
 
 ## Nodes 2D
 
 - `Node2D`, `Entity`, `Marker2D`
-- `Sprite2D` (`Sprite` reste un alias compatible)
+- `Sprite2D` (`Sprite` remains a compatible alias)
 - `AnimatedSprite2D`
 - `Camera2D`
 - `TileMap`
 - `ParallaxLayer2D`
 
-`Sprite2D`, `AnimatedSprite2D` et `TileMap` utilisent les assets compilés du projet. `Camera2D` configure la caméra avant le rendu de la scène.
+`Sprite2D`, `AnimatedSprite2D`, and `TileMap` use the project's compiled assets.
+`Camera2D` configures the camera before rendering the scene.
 
 ```ini
 [node "Map" type="TileMap" parent="World"]
@@ -53,19 +56,27 @@ tile_height = 16
 - `RayLight2D`
 - `LightOccluder2D`
 
-Formes disponibles pour `CollisionShape2D` :
+Available `CollisionShape2D` shapes:
 
 - `rectangle` : `width`, `height`
 - `circle` : `radius`
 - `capsule` : `width`, `height`, `radius`
 - `segment` : dimensions/points bornés
-- `polygon` : propriété textuelle `points`, compilée avec la scène
+- `polygon`: textual `points` property, compiled with the scene
 
-Les propriétés communes sont `disabled`, `collision_layer` et `collision_mask` selon le node. `debug_visible = true` dessine les bornes de la forme. L'API déterministe `Physics` fournit les requêtes AABB et cercle ainsi que les déplacements bloquants sur X et Y. Le noyau physique résout également les contacts cercle-cercle et empêche les AABB rapides de traverser une paroi fine.
+Common properties are `disabled`, `collision_layer`, and `collision_mask`,
+depending on the node. `debug_visible = true` draws the shape bounds. The
+deterministic `Physics` API provides AABB and circle queries as well as blocking
+movement on X and Y. The physics core also resolves circle-to-circle contacts
+and keeps fast AABBs from passing through a thin wall.
 
 ### Fluide temps réel
 
-`Fluid2D` exécute une simulation bornée à chaque `Update()` : gravité subpixel, amortissement, pression et impulsions entre particules circulaires, puis collisions avec les quatre parois. Il n'utilise aucune allocation dynamique et accepte de 1 à 64 particules. Pour NumWorks, rester autour de 32 particules conserve un budget d'affichage confortable.
+`Fluid2D` runs a bounded simulation on each `Update()`: subpixel gravity,
+damping, pressure, and impulses between circular particles, followed by
+collisions with all four walls. It uses no dynamic allocation and accepts 1 to
+64 particles. On NumWorks, keeping the count around 32 leaves a comfortable
+rendering budget.
 
 ```ini
 [node "Fluid" type="Fluid2D" parent="Main"]
@@ -86,11 +97,18 @@ color = Cyan
 background = Blue
 ```
 
-Avec `interactive = true`, les touches directionnelles inclinent la gravité. Les propriétés `obstacle_x`, `obstacle_y` et `obstacle_radius` ajoutent un obstacle circulaire statique dans le bassin. `examples/fluid_demo` montre la simulation réelle sur desktop et NumWorks.
+With `interactive = true`, directional keys tilt gravity. The `obstacle_x`,
+`obstacle_y`, and `obstacle_radius` properties add a static circular obstacle to
+the basin. `examples/fluid_demo` shows the real simulation on desktop and
+NumWorks.
 
 ### Raytracing 2D
 
-`RayLight2D` lance des rayons à chaque frame à partir d'une table de 32 directions fixes. Chaque rayon avance jusqu'à `length` pixels et s'arrête au premier `LightOccluder2D` rencontré. Le calcul est déterministe et sans allocation ; le desktop trace les segments au pixel, tandis que NumWorks utilise des marqueurs espacés pour respecter la file d'affichage EADK.
+`RayLight2D` casts rays each frame from a table of 32 fixed directions. Every
+ray advances up to `length` pixels and stops at the first `LightOccluder2D` it
+meets. The computation is deterministic and allocation-free; desktop draws
+pixel-accurate segments, while NumWorks uses spaced markers to respect the EADK
+display queue.
 
 ```ini
 [node "Wall" type="LightOccluder2D" parent="Main"]
@@ -109,11 +127,16 @@ energy = 75
 color = Yellow
 ```
 
-La scène complète est disponible dans `examples/light_demo`.
+The complete scene is available in `examples/light_demo`.
 
 ### Raytracing 3D
 
-`RayTracer3D` lance un rayon de caméra par pixel logique. Les `RaySphere3D` utilisent une intersection analytique rayon–sphère ; un plan de sol quadrillé, l'éclairage Lambert et un rayon d'ombre vers la source sont également calculés. Il s'agit d'un vrai rendu 3D par lancer de rayons. Sur NumWorks, le moteur rend une image de 32 × 24 blocs par passes de 6 blocs : l'image complète apparaît en environ 4 secondes, puis se rafraîchit sans pic de calcul ni dépassement de la liste de rendu embarquée.
+`RayTracer3D` casts one camera ray per logical pixel. `RaySphere3D` uses an
+analytic ray–sphere intersection; a checkerboard ground plane, Lambert lighting,
+and a shadow ray toward the light source are also calculated. This is real 3D
+ray tracing. On NumWorks, the engine renders a 32 × 24 block image in passes of
+six blocks: the full image appears in about four seconds, then refreshes without
+a computation spike or exceeding the embedded rendering list.
 
 ```ini
 [node "Renderer" type="RayTracer3D" parent="Main"]
@@ -130,7 +153,7 @@ radius = 34
 color = Red
 ```
 
-`examples/raytracer_3d_demo` fournit une scène avec trois sphères et un sol éclairé.
+`examples/raytracer_3d_demo` provides a scene with three spheres and a lit floor.
 
 ## GUI
 
@@ -150,11 +173,17 @@ Layouts :
 - `GridContainer`
 - `CenterContainer`
 
-Les contrôles utilisent des coordonnées et dimensions entières : `x`, `y`, `position`, `width`, `height`, `visible` et `layer`. Les containers calculent la position de leurs enfants à la compilation. `Panel`, `ColorRect`, `Label`, `Button`, `TextureRect` et `ProgressBar` sont rendus sur desktop et NumWorks par les mêmes appels statiques.
+Controls use integer coordinates and dimensions: `x`, `y`, `position`, `width`,
+`height`, `visible`, and `layer`. Containers calculate their children's positions
+at compilation time. `Panel`, `ColorRect`, `Label`, `Button`, `TextureRect`, and
+`ProgressBar` use the same static calls on desktop and NumWorks.
 
-### Navigation des boutons
+### Button navigation
 
-Les `Button` forment automatiquement un sélecteur sans souris. Le focus initial utilise `selected = true`, ou le premier bouton actif. Les touches Haut/Bas/Gauche/Droite choisissent le voisin géométrique le plus proche et bouclent lorsqu'aucun voisin n'existe. `OK` active le signal statique `pressed` :
+`Button` nodes automatically form a mouse-free selector. Initial focus uses
+`selected = true`, or the first active button. Up/Down/Left/Right select the
+nearest geometric neighbour and wrap when there is none. `OK` activates the
+static `pressed` signal:
 
 ```ini
 [node "Play" type="Button" parent="Menu"]
@@ -165,11 +194,14 @@ selected_color = Yellow
 @signal Menu/Play.pressed -> Main.on_play
 ```
 
-Les boutons `disabled = true` ou invisibles sont retirés de la navigation. Le focus et les voisins sont compilés statiquement, sans liste dynamique au runtime. Ce comportement est identique sur desktop et NumWorks.
+Buttons with `disabled = true` or invisible buttons are removed from navigation.
+Focus and neighbours compile statically, with no runtime dynamic list. This
+behaviour is identical on desktop and NumWorks.
 
 ## Galerie
 
-Le projet `examples/node_gallery` combine les formes de collision, la hiérarchie 2D et plusieurs contrôles GUI :
+The `examples/node_gallery` project combines collision shapes, 2D hierarchy, and
+several GUI controls:
 
 ```bash
 cargo run -p kalcite-cli -- project-check examples/node_gallery

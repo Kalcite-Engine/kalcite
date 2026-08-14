@@ -1,19 +1,28 @@
-# Plateformes
+# Platforms
 
-## Contrat commun
+## Shared contract
 
-Chaque backend implémente `kalcite_platform_api::Platform` : dimensions, horloge monotone, boutons et présentation RGB565. Les futures extensions (audio, stockage, vibrations) seront des traits séparés afin qu'une plateforme minimale n'embarque pas du code inutilisé.
+Every backend implements `kalcite_platform_api::Platform`: dimensions, monotonic
+clock, buttons, and RGB565 presentation. Future extensions (audio, storage, and
+haptics) will be separate traits so a minimal platform does not carry unused code.
 
 ## NumWorks
 
-Cible Rust : `thumbv7em-none-eabihf`. Résolution native : 320×240. Le backend final doit relier les fonctions écran/clavier/temps offertes par l'environnement d'application Epsilon. Les symboles FFI sont confinés à `kalcite-platform-numworks`.
+Rust target: `thumbv7em-none-eabihf`. Native resolution: 320×240. The final
+backend links the screen, keyboard, and time functions exposed by the Epsilon
+application environment. FFI symbols are contained in `kalcite-platform-numworks`.
 
-Le matériel officiel documente un STM32F730V8T6, Cortex-M7 216 MHz, 256 Kio SRAM et une flash Quad-SPI 64 Mbit. Le moteur ne suppose jamais que toute cette mémoire est disponible.
+Official hardware documentation lists an STM32F730V8T6, a 216 MHz Cortex-M7,
+256 KiB SRAM, and 64 Mbit Quad-SPI flash. The engine never assumes that all of
+this memory is available.
 
 ## Desktop
 
-Le backend headless est présent. Un backend fenêtré sera ajouté dans un crate indépendant, probablement SDL3, avec : scaling entier, clavier/manette, audio, capture et overlay de budgets.
+The headless backend is available. A windowed backend will be added in an
+independent crate, likely using SDL3, with integer scaling, keyboard/controller
+input, audio, capture, and budget overlays.
 
 ## Web
 
-Le backend WebAssembly utilisera le même framebuffer logique. La compilation du jeu reste native WASM : aucune VM Kalcite n'est ajoutée.
+The WebAssembly backend will use the same logical framebuffer. Game compilation
+remains native WASM: no Kalcite VM is added.

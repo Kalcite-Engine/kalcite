@@ -1,12 +1,12 @@
 # Fluid demo
 
-Simulation 2D en temps réel exécutée par le moteur Kalcite :
+Real-time 2D simulation running on the Kalcite engine:
 
-- 32 particules circulaires en mémoire fixe (budget NumWorks) ;
-- gravité et amortissement subpixel ;
-- résolution des contacts cercle-cercle avec impulsions ;
-- collisions et rebonds sur les quatre parois ;
-- inclinaison de la gravité avec les touches directionnelles.
+- 32 circular particles in fixed memory (within the NumWorks budget);
+- subpixel gravity and damping;
+- circle-to-circle contact resolution with impulses;
+- collisions and bounces against all four walls;
+- gravity tilt controlled with the directional keys.
 
 ```sh
 cargo run -p kalcite-cli -- build-app examples/fluid_demo --target desktop

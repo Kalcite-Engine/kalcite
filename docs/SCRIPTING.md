@@ -1,8 +1,10 @@
-# Scripts Kalcite — flux débutant
+# Kalcite scripts — beginner workflow
 
-Kalcite traite les scripts `.klc` comme des composants de jeu, pas comme des fichiers Rust à assembler manuellement. Dans un projet contenant `kalcite.toml`, tous les scripts placés sous `scripts/` sont découverts récursivement.
+Kalcite treats `.klc` scripts as game components, not Rust files to assemble by
+hand. In a project containing `kalcite.toml`, every script under `scripts/` is
+discovered recursively.
 
-## Créer un projet
+## Creating a project
 
 ```bash
 kalcite init MonJeu --name MonJeu
@@ -11,7 +13,7 @@ kalcite project-check
 kalcite project-build --target numworks
 ```
 
-Structure créée :
+Generated structure:
 
 ```text
 MonJeu/
@@ -25,9 +27,10 @@ MonJeu/
     └── game.klc
 ```
 
-## Une classe globale par script
+## One global class per script
 
-Le nom de classe est automatiquement visible depuis tous les autres scripts du projet. Aucun `use` n’est nécessaire pour le cas normal.
+The class name is automatically visible from every other script in the project.
+No `use` declaration is required in the normal case.
 
 ```kalcite
 // scripts/player.klc
@@ -47,11 +50,12 @@ public class CameraFollow extend Node2D {
 }
 ```
 
-Le compilateur relie `Player` au bon script, vérifie les doublons et signale une classe introuvable avec le fichier concerné.
+The compiler resolves `Player` to the correct script, checks duplicates, and
+reports an unknown class with the relevant file.
 
-## Champs visibles dans l’inspecteur
+## Inspector-visible fields
 
-`@export` rend un champ éditable dans l’inspecteur du futur éditeur Kalcite :
+`@export` makes a field editable in the future Kalcite editor's inspector:
 
 ```kalcite
 @export
@@ -64,11 +68,12 @@ public u8 lives = 3;
 public SpriteAsset texture;
 ```
 
-Les valeurs restent statiquement typées et bornées. L’éditeur ne sérialise pas de dictionnaire dynamique.
+Values remain statically typed and bounded. The editor does not serialize a
+dynamic dictionary.
 
-## Références vers des nœuds
+## Node references
 
-`@node("Nom")` demande une référence vers un nœud de la scène :
+`@node("Name")` requests a reference to a scene node:
 
 ```kalcite
 @component
@@ -82,9 +87,10 @@ public class Main extend Node {
 }
 ```
 
-La référence est résolue lors du build de scène. Sur NumWorks, elle devient un handle compact, pas une recherche par chaîne à chaque frame.
+The reference is resolved during scene building. On NumWorks, it becomes a
+compact handle rather than a string lookup every frame.
 
-## Singletons/autoloads
+## Singletons and autoloads
 
 ```kalcite
 @autoload
@@ -93,9 +99,10 @@ public class Game extend Node {
 }
 ```
 
-Tous les scripts peuvent ensuite écrire `Game.score`. Le build génère un stockage statique unique.
+Every script can then write `Game.score`. The build generates one static storage
+location.
 
-## Signaux
+## Signals
 
 ```kalcite
 @component
@@ -110,13 +117,15 @@ public class Health extend Node {
 }
 ```
 
-Les connexions déclarées dans une scène sont compilées en appels directs. Les connexions dynamiques restent explicites et peuvent être interdites par le profil NumWorks.
+Connections declared in a scene compile to direct calls. Dynamic connections stay
+explicit and may be disallowed by the NumWorks profile.
 
-## Scènes lisibles
+## Readable scenes
 
-Les scènes `.kscn` utilisent les noms globaux des scripts :
+`.kscn` scenes use global script names:
 
-Les nodes intégrés 2D, collision et GUI utilisent `type="NodeType"`. Leur catalogue et leurs propriétés sont décrits dans `NODES.md`.
+Built-in 2D, collision, and GUI nodes use `type="NodeType"`. Their catalogue and
+properties are described in `NODES.md`.
 
 ```ini
 [scene]
@@ -135,13 +144,14 @@ from = "Player/Health.died"
 to = "Main.on_player_died"
 ```
 
-L’objectif est le confort Unity/Godot pendant l’édition, puis une compilation agressive : noms supprimés, références transformées en handles et connexions statiques.
+The aim is Unity/Godot-like editing comfort followed by aggressive compilation:
+names removed, references transformed into handles, and static connections.
 
-## Règles de simplicité
+## Simple rules
 
-- placer les scripts dans `scripts/` ;
-- utiliser une classe principale par fichier ;
-- nommer `PlayerController` dans `player_controller.klc` ;
-- utiliser directement le nom d’une autre classe ;
-- employer `@export`, `@node` et `@autoload` plutôt qu’un registre manuel ;
-- lancer `kalcite project-check` pour obtenir des erreurs orientées solution.
+- place scripts in `scripts/`;
+- use one main class per file;
+- name `PlayerController` in `player_controller.klc`;
+- use another class's name directly;
+- prefer `@export`, `@node`, and `@autoload` to a manual registry;
+- run `kalcite project-check` for solution-oriented errors.

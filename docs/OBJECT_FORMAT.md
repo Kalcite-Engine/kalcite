@@ -1,22 +1,26 @@
-# Format objet `.kco`
+# `.kco` object format
 
-`.kco` signifie **Kalcite Compiled Object**. Il sépare la compilation du langage de l’édition de liens spécifique à une plateforme.
+`.kco` stands for **Kalcite Compiled Object**. It separates language compilation
+from platform-specific linking.
 
-## En-tête version 1
+## Version 1 header
 
-| Offset | Taille | Champ |
+| Offset | Size | Field |
 |---:|---:|---|
-| 0 | 4 | magie `KCO\0` |
-| 4 | 2 | version little-endian |
-| 6 | 1 | cible |
+| 0 | 4 | `KCO\0` magic |
+| 4 | 2 | little-endian version |
+| 6 | 1 | target |
 | 7 | 1 | flags |
-| 8 | 4 | taille du payload |
-| 12 | 4 | checksum FNV-1a du payload |
+| 8 | 4 | payload size |
+| 12 | 4 | payload FNV-1a checksum |
 
-Cibles initiales : portable, NumWorks, desktop et web.
+Initial targets are portable, NumWorks, desktop, and web.
 
-## Évolution prévue
+## Planned evolution
 
-La version 1 encapsule le squelette Rust généré afin de valider tout le pipeline. Le format sectionné prévu contiendra : table des symboles, MIR compacte, données constantes, assets, relocations et manifeste de budgets RAM/flash.
+Version 1 wraps generated Rust scaffolding to validate the complete pipeline. The
+planned sectioned format will contain a symbol table, compact MIR, constant data,
+assets, relocations, and a RAM/flash budget manifest.
 
-Le runtime cible n’interprète pas le `.kco`. Le linker/backend le transforme en code machine avant distribution.
+The target runtime does not interpret `.kco`. The linker/backend transforms it
+into machine code before distribution.

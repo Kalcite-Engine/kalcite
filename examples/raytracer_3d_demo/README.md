@@ -1,12 +1,12 @@
 # True 3D raytracing demo
 
-Cette scène calcule, pour chaque pixel logique :
+This scene calculates, for each logical pixel:
 
-- intersections rayon–sphère ;
-- intersection avec un plan de sol quadrillé ;
-- éclairage Lambert à atténuation ;
-- rayons d'ombre vers la source ;
-- rendu par blocs sur NumWorks.
+- ray–sphere intersections;
+- intersection with a checkerboard ground plane;
+- attenuated Lambert lighting;
+- shadow rays toward the light source;
+- block-based rendering on NumWorks.
 
 ```sh
 cargo run -p kalcite-cli -- build-app examples/raytracer_3d_demo --target desktop

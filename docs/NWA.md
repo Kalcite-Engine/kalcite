@@ -1,30 +1,34 @@
-# Backend NumWorks `.nwa`
+# NumWorks `.nwa` backend
 
 ## Pipeline
 
 ```text
-main.klc -> validation Kalcite -> projet Rust no_std -> ELF ARM relocalisable -> .nwa
+main.klc -> Kalcite validation -> no_std Rust project -> relocatable ARM ELF -> .nwa
 ```
 
-La cible est `thumbv7em-none-eabihf`. Les options de lien sont `--relocatable` et `-no-gc-sections`, conformément au modèle Rust officiel NumWorks. Le binaire contient les sections EADK suivantes :
+The target is `thumbv7em-none-eabihf`. The linker options are `--relocatable`
+and `-no-gc-sections`, following the official NumWorks Rust model. The binary
+contains the following EADK sections:
 
 - `.rodata.eadk_app_name`
 - `.rodata.eadk_api_level`
 - `.rodata.eadk_app_icon`
 
-Le backend initial produit le Pong natif de démonstration. Il n’embarque ni VM, ni GC, ni interpréteur. Le futur backend MIR remplacera progressivement le générateur spécialisé sans modifier le format de sortie.
+The initial backend produces the native Pong demonstration. It embeds no VM, GC,
+or interpreter. The future MIR backend will gradually replace the specialized
+generator without changing the output format.
 
-## Commande
+## Command
 
 ```bash
 kalcite build-nwa examples/pong/src/main.klc --name Pong -o Pong.nwa
 ```
 
-`--no-build` conserve seulement le projet Rust généré.
+`--no-build` keeps only the generated Rust project.
 
 ## Installation
 
-Une fois le fichier produit, il peut être envoyé avec la page Apps NumWorks ou avec :
+Once produced, the file can be sent through the NumWorks Apps page or with:
 
 ```bash
 npx --yes nwlink@0.0.16 install-nwa Pong.nwa
