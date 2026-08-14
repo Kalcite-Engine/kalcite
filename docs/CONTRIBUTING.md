@@ -29,7 +29,7 @@ have one responsibility each.
 | Native output | `kalcite-backend-rust`, `kalcite-backend-desktop`, `kalcite-backend-numworks`, `kalcite-backend-ti` | Generate portable Rust then adapt it to a target. |
 | Runtime | `kalcite-runtime-core`, `kalcite-engine-core`, `kalcite-renderer`, `kalcite-input`, `kalcite-audio`, `kalcite-save`, `kalcite-physics2d` | Bounded runtime primitives and engine services. |
 | Platform boundary | `kalcite-platform-api`, `kalcite-platform-headless`, `kalcite-platform-numworks` | Capability contracts and target implementations. |
-| Developer tools | `kalcite-cli`, `kalcite-lsp`, `kalcite-linter`, `kalcite-test-runner`, `kalcite-profiler`, `kalcite-package`, `kalcite-editor` | Commands, editor support, tests, reports, and packaging. |
+| Developer tools | `kalcite-cli`, `kally`, `kalcite-lsp`, `kalcite-linter`, `kalcite-test-runner`, `kalcite-profiler`, `kalcite-editor` | Commands, editor support, tests, reports, and packaging. |
 
 `examples/` contains executable reference projects. `tests/klc/` contains
 language fixtures. `docs/` is technical source documentation. The public

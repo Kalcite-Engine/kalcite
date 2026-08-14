@@ -3,10 +3,15 @@ name = "kalcite-cli"
 version.workspace = true
 edition = "2024"
 license = "MIT"
+default-run = "kalcite"
 
 [[bin]]
 name = "kalcite"
 path = "src/main.rs"
+
+[[bin]]
+name = "kally"
+path = "src/kally.rs"
 
 [dependencies]
 kalcite-compiler = { path = "../kalcite-compiler" }
@@ -16,7 +21,7 @@ kalcite-object = { path = "../kalcite-object" }
 kalcite-stdlib = { path = "../kalcite-stdlib" }
 kalcite-scene = { path = "../kalcite-scene" }
 kalcite-assets = { path = "../kalcite-assets" }
-kalcite-package = { path = "../kalcite-package" }
+kally = { path = "../kally" }
 kalcite-test-runner = { path = "../kalcite-test-runner" }
 kalcite-backend-ti = { path = "../kalcite-backend-ti" }
 kalcite-input = { path = "../kalcite-input" }
