@@ -6,6 +6,15 @@ Kalcite packages are source dependencies. A project uses a package only after
 the CLI has copied its selected source subtree into `.kally/packages/`; that
 directory is compiler input and should not be edited.
 
+`kally.toml` is the editable manifest: it records each requested source and
+branch/tag. `kally.lock` is generated from it and records the immutable commit
+and checksum used by normal builds. Commit both files; do not commit
+`.kally/packages/`.
+
+On a fresh checkout, `kally sync` performs the initial resolution when a
+manifest entry has no lock entry. Once locked, a manifest change deliberately
+requires `kally update` so ordinary syncs never advance a Git dependency.
+
 ## Add a package from a monorepo
 
 Use a Git URL prefixed with `git:`. An optional `#SUBDIR` selects one package
@@ -54,5 +63,4 @@ kally add tween path:../kalcite-packages/packages/tween
 ```
 
 They are copied and checksummed when added. Use Git dependencies for releases
-and shared projects; do not commit `.kally/packages/`, but do commit
-`kally.lock`.
+and shared projects.

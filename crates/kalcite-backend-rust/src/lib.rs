@@ -15,9 +15,27 @@ impl core::fmt::Display for EmitError {
 }
 
 pub fn emit_game(program: &Program) -> Result<String, EmitError> {
-    let mut out = String::from(
-        "use crate::platform::{Audio, Color, Draw, Hardware, Input, Key, Physics, Storage, System, Vec2fx};\nuse crate::project_data::ProjectSave;\nuse crate::runtime::{Handle, SignalQueue, StaticPool};\nuse crate::stdlib::{Bits, Checksum, ColorUtil, Fixed, Math, MsgPack, Save};\n\n",
-    );
+    if program.scene.is_none() {
+        return Err(EmitError::NoScene);
+    }
+    emit_module(
+        program,
+        "use crate::platform::{Audio, Color, Draw, Hardware, Input, Key, Physics, Storage, System, Vec2fx};\nuse crate::project_data::ProjectSave;\nuse crate::runtime::{Handle, SignalQueue, StaticPool};\nuse crate::stdlib::{Bits, BoundedString, Checksum, ColorUtil, Fixed, Fs, Git, Hash, Http, Math, MsgPack, Save, Text};\n\n",
+    )
+}
+
+/// Emit KLC free functions for a host tool.  This is used by Kally's build
+/// script, so its decision logic is compiled from KLC rather than mirrored in
+/// Rust.  Library modules deliberately cannot declare game classes.
+pub fn emit_library(program: &Program, prelude: &str) -> Result<String, EmitError> {
+    if !program.classes.is_empty() {
+        return Err(EmitError::NoScene);
+    }
+    emit_module(program, prelude)
+}
+
+fn emit_module(program: &Program, prelude: &str) -> Result<String, EmitError> {
+    let mut out = String::from(prelude);
     for constant in &program.constants {
         if let Some(value) = &constant.init {
             out.push_str(&format!(
@@ -37,9 +55,6 @@ pub fn emit_game(program: &Program) -> Result<String, EmitError> {
     }
     for class in &program.classes {
         emit_class(&mut out, program, class);
-    }
-    if program.scene.is_none() {
-        return Err(EmitError::NoScene);
     }
     Ok(out)
 }
@@ -147,7 +162,12 @@ fn stmt_free(
                 .unwrap_or_default();
             let v = value
                 .as_ref()
-                .map(|e| format!(" = {}", expr_free(program, e, scope)))
+                .map(|e| {
+                    format!(
+                        " = {}",
+                        expr_for_type_free(program, e, scope, explicit.as_ref())
+                    )
+                })
                 .unwrap_or_else(|| {
                     explicit
                         .as_ref()
@@ -244,9 +264,12 @@ fn expr_free(program: &Program, e: &Expr, scope: &HashSet<String>) -> String {
                     | "Save"
                     | "Math"
                     | "Checksum"
+                    | "Hash"
+                    | "Fs"
                     | "Bits"
                     | "Fixed"
                     | "ColorUtil"
+                    | "Text"
             );
             if builtin {
                 return if parts.len() == 1 {
@@ -287,6 +310,20 @@ fn expr_free(program: &Program, e: &Expr, scope: &HashSet<String>) -> String {
             expr_free(program, right, scope)
         ),
     }
+}
+
+/// A string literal becomes a bounded KLC value only where its declared
+/// destination is `String[N]`.  Other APIs (Draw, Fs, etc.) retain `&str`.
+fn expr_for_type_free(
+    program: &Program,
+    expression: &Expr,
+    scope: &HashSet<String>,
+    expected: Option<&Type>,
+) -> String {
+    if let (Some(Type::BoundedString(capacity)), Expr::String(value)) = (expected, expression) {
+        return format!("BoundedString::<{capacity}>::from_str({value:?})");
+    }
+    expr_free(program, expression, scope)
 }
 
 fn emit_class(out: &mut String, program: &Program, class: &Class) {
@@ -356,7 +393,7 @@ fn emit_class(out: &mut String, program: &Program, class: &Class) {
         let value = field
             .init
             .as_ref()
-            .map(|e| expr(program, class, e, &HashSet::new()))
+            .map(|e| expr_for_type(program, class, e, &HashSet::new(), &field.ty))
             .unwrap_or_else(|| default_expr(program, &field.ty));
         out.push_str(&format!("        {}: {},\n", field.name, value));
     }
@@ -586,7 +623,18 @@ fn stmt(
                 .unwrap_or_default();
             let value_part = value
                 .as_ref()
-                .map(|e| format!(" = {}", expr(program, class, e, scope)))
+                .map(|e| {
+                    format!(
+                        " = {}",
+                        expr_for_type(
+                            program,
+                            class,
+                            e,
+                            scope,
+                            explicit_ty.as_ref().unwrap_or(&Type::Void)
+                        )
+                    )
+                })
                 .unwrap_or_else(|| {
                     explicit_ty
                         .as_ref()
@@ -657,6 +705,19 @@ fn expr(program: &Program, class: &Class, expression: &Expr, scope: &HashSet<Str
     }
 }
 
+fn expr_for_type(
+    program: &Program,
+    class: &Class,
+    expression: &Expr,
+    scope: &HashSet<String>,
+    expected: &Type,
+) -> String {
+    if let (Type::BoundedString(capacity), Expr::String(value)) = (expected, expression) {
+        return format!("BoundedString::<{capacity}>::from_str({value:?})");
+    }
+    expr(program, class, expression, scope)
+}
+
 fn render_path(
     program: &Program,
     class: &Class,
@@ -686,9 +747,12 @@ fn render_path(
             | "Save"
             | "Math"
             | "Checksum"
+            | "Hash"
+            | "Fs"
             | "Bits"
             | "Fixed"
             | "ColorUtil"
+            | "Text"
     );
     if builtin {
         if parts.len() == 1 {
@@ -753,6 +817,7 @@ fn ty(program: &Program, t: &Type) -> String {
         Type::I32 => "i32".into(),
         Type::Fx8 => "i16".into(),
         Type::Vec2fx => "Vec2fx".into(),
+        Type::BoundedString(n) => format!("BoundedString<{n}>"),
         Type::FixedArray(inner, n) => format!("[{}; {}]", ty(program, inner), n),
         Type::Handle(inner) => format!("Handle<{}>", ty(program, inner)),
         Type::Pool(inner, n) => format!("StaticPool<{}, {}>", ty(program, inner), n),
@@ -766,6 +831,7 @@ fn default_expr(program: &Program, t: &Type) -> String {
             "0".into()
         }
         Type::Vec2fx => "Vec2fx::new(0, 0)".into(),
+        Type::BoundedString(_) => "Default::default()".into(),
         Type::FixedArray(inner, n) => format!("[{}; {}]", default_expr(program, inner), n),
         Type::Handle(_) => "Handle::invalid()".into(),
         Type::Pool(_, _) => "StaticPool::new()".into(),
@@ -838,6 +904,28 @@ mod tests {
         );
         assert!(r.contains("System::millis()"));
         assert!(r.contains("System::sleep_ms(1)"));
+    }
+
+    #[test]
+    fn emits_host_library_builtins() {
+        let output = emitted(
+            "use std.fs; use std.hash; @scene class G extends Game { fn update() -> void { Fs.exists(\"kally.lock\"); Hash.sha256_u32_prefix(7); } }",
+        );
+        assert!(output.contains("Fs::exists(\"kally.lock\")"));
+        assert!(output.contains("Hash::sha256_u32_prefix(7)"));
+    }
+    #[test]
+    fn emits_bounded_strings_without_host_allocation() {
+        let output = emitted(
+            "@scene class G extends Game { String[16] name = \"Kally\"; fn update() -> void { String[8] tag = \"pkg\"; var bytes: u32 = Text.length(tag); } }",
+        );
+        assert!(output.contains("name: BoundedString<16>"));
+        assert!(output.contains("name: BoundedString::<16>::from_str(\"Kally\")"));
+        assert!(
+            output
+                .contains("let mut tag: BoundedString<8> = BoundedString::<8>::from_str(\"pkg\");")
+        );
+        assert!(output.contains("Text::length(tag)"));
     }
     #[test]
     fn emits_hardware_and_text_builtins() {

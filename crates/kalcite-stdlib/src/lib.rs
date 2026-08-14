@@ -35,6 +35,31 @@ pub const LIBRARIES: &[Library] = &[
         source: None,
     },
     Library {
+        name: "std.hash",
+        kind: LibraryKind::Rust,
+        source: None,
+    },
+    Library {
+        name: "std.fs",
+        kind: LibraryKind::Rust,
+        source: None,
+    },
+    Library {
+        name: "std.http",
+        kind: LibraryKind::Rust,
+        source: None,
+    },
+    Library {
+        name: "std.git",
+        kind: LibraryKind::Rust,
+        source: None,
+    },
+    Library {
+        name: "std.kally",
+        kind: LibraryKind::Klc,
+        source: Some(include_str!("../klc/kally.klc")),
+    },
+    Library {
         name: "std.bits",
         kind: LibraryKind::Rust,
         source: None,

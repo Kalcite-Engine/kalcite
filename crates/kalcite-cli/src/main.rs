@@ -2,7 +2,7 @@ use kalcite_linter::{Severity, has_errors, lint};
 use kalcite_object::Target;
 use kalcite_project::{
     AssetReport, ProjectReport, discover, discover_scenes, find_root, init_project, load_manifest,
-    required_capabilities, validate, validate_manifest, validate_scene,
+    required_capabilities, validate, validate_host_libraries, validate_manifest, validate_scene,
 };
 use std::{
     env, fs,
@@ -855,31 +855,54 @@ fn kally_add_command(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let (revision, checksum) = if let Some(local) = source.strip_prefix("path:") {
-        match kally::checksum_path(&root.join(local)) {
+    let source_kind = match kally::source_kind(source) {
+        Ok(kind) => kind,
+        Err(error) => {
+            eprintln!("package `{name}`: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let (revision, checksum) = match source_kind {
+        kally::SourceKind::Path => match kally::source_payload(source)
+            .and_then(|local| kally::checksum_path(&root.join(local)))
+        {
             Ok(checksum) => ("local".into(), checksum),
             Err(error) => {
                 eprintln!("package `{name}`: {error}");
                 return ExitCode::FAILURE;
             }
-        }
-    } else if source.starts_with("git:") {
-        match resolve_git_revision(&root, name, source, &reference) {
+        },
+        kally::SourceKind::Git => match resolve_git_revision(&root, name, source, &reference) {
             Ok(revision) => (revision, String::new()),
             Err(error) => {
                 eprintln!("package `{name}`: {error}");
                 return ExitCode::FAILURE;
             }
+        },
+    };
+    let locked_reference = match source_kind {
+        kally::SourceKind::Path => "local".to_owned(),
+        kally::SourceKind::Git => reference,
+    };
+    let manifest_path = root.join("kally.toml");
+    let mut manifest = match kally::load_manifest(&manifest_path) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            eprintln!("{}: {error}", manifest_path.display());
+            return ExitCode::FAILURE;
         }
-    } else {
-        eprintln!("package `{name}`: source must start with `git:` or `path:`");
+    };
+    manifest.packages.insert(
+        name.clone(),
+        kally::ManifestPackage {
+            source: source.clone(),
+            reference: locked_reference.clone(),
+        },
+    );
+    if let Err(error) = kally::save_manifest(&manifest_path, &manifest) {
+        eprintln!("{}: {error}", manifest_path.display());
         return ExitCode::FAILURE;
-    };
-    let locked_reference = if source.starts_with("path:") {
-        "local".to_owned()
-    } else {
-        reference
-    };
+    }
     lock.packages.insert(
         name.clone(),
         kally::Package {
@@ -930,17 +953,40 @@ fn kally_update_command(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let manifest_path = root.join("kally.toml");
+    let manifest = match kally::load_manifest(&manifest_path) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            eprintln!("{}: {error}", manifest_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
     let mut updated = 0;
     for (name, package) in &mut lock.packages {
-        if wanted.is_some_and(|wanted| wanted != name) || !package.source.starts_with("git:") {
+        if wanted.is_some_and(|wanted| wanted != name) {
             continue;
         }
-        let reference = if package.reference.is_empty() {
-            &package.revision
-        } else {
-            &package.reference
+        let requested = manifest.packages.get(name);
+        let source = requested
+            .map(|package| package.source.as_str())
+            .unwrap_or(&package.source);
+        if kally::source_kind(source) != Ok(kally::SourceKind::Git) {
+            continue;
+        }
+        let reference = requested
+            .map(|package| package.reference.clone())
+            .unwrap_or_else(|| {
+                if package.reference.is_empty() {
+                    package.revision.clone()
+                } else {
+                    package.reference.clone()
+                }
+            });
+        if let Some(requested) = requested {
+            package.source = requested.source.clone();
+            package.reference = requested.reference.clone();
         };
-        match resolve_git_revision(&root, name, &package.source, reference) {
+        match resolve_git_revision(&root, name, &package.source, &reference) {
             Ok(revision) => {
                 package.revision = revision;
                 package.checksum.clear();
@@ -992,6 +1038,19 @@ fn kally_remove_command(args: &[String]) -> ExitCode {
         eprintln!("package `{name}` is not locked");
         return ExitCode::FAILURE;
     }
+    let manifest_path = root.join("kally.toml");
+    let mut manifest = match kally::load_manifest(&manifest_path) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            eprintln!("{}: {error}", manifest_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    manifest.packages.remove(name);
+    if let Err(error) = kally::save_manifest(&manifest_path, &manifest) {
+        eprintln!("{}: {error}", manifest_path.display());
+        return ExitCode::FAILURE;
+    }
     match kally::save(&path, &lock) {
         Ok(()) => {
             println!("removed package `{name}`");
@@ -1021,7 +1080,7 @@ fn kally_sync_command(args: &[String]) -> ExitCode {
 }
 
 fn sync_kally_packages(root: &Path) -> Result<usize, String> {
-    let lock = kally::load(&root.join("kally.lock"))?;
+    let lock = reconcile_kally_manifest(root)?;
     let cache = root.join(".kally/packages");
     fs::create_dir_all(&cache).map_err(|error| error.to_string())?;
     if let Err(error) = kally::verify(&lock, &cache) {
@@ -1031,31 +1090,94 @@ fn sync_kally_packages(root: &Path) -> Result<usize, String> {
         }
     }
     for (name, p) in &lock.packages {
-        if let Some(local) = p.source.strip_prefix("path:") {
-            let src = root.join(local);
-            let dst = cache.join(name);
-            kally::materialize(&src, &dst).map_err(|error| format!("package `{name}`: {error}"))?;
-            if !p.checksum.is_empty() {
-                let got = kally::checksum_path(&dst)
+        match kally::source_kind(&p.source).map_err(|error| format!("package `{name}`: {error}"))? {
+            kally::SourceKind::Path => {
+                let local = kally::source_payload(&p.source)?;
+                let src = root.join(local);
+                let dst = cache.join(name);
+                kally::materialize(&src, &dst)
                     .map_err(|error| format!("package `{name}`: {error}"))?;
-                if got != p.checksum {
+                if !p.checksum.is_empty() {
+                    let got = kally::checksum_path(&dst)
+                        .map_err(|error| format!("package `{name}`: {error}"))?;
+                    if got != p.checksum {
+                        return Err(format!("package `{name}`: checksum mismatch"));
+                    }
+                }
+            }
+            kally::SourceKind::Git => {
+                let checksum = materialize_kally_git_package(root, name, p)
+                    .map_err(|error| format!("package `{name}`: {error}"))?;
+                if !p.checksum.is_empty() && checksum != p.checksum {
                     return Err(format!("package `{name}`: checksum mismatch"));
                 }
             }
-        } else if p.source.starts_with("git:") {
-            let checksum = materialize_kally_git_package(root, name, p)
-                .map_err(|error| format!("package `{name}`: {error}"))?;
-            if !p.checksum.is_empty() && checksum != p.checksum {
-                return Err(format!("package `{name}`: checksum mismatch"));
-            }
-        } else {
-            return Err(format!(
-                "package `{name}`: unsupported source `{}`",
-                p.source
-            ));
         }
     }
+    // Materialization is the only point at which a source-tree checksum is
+    // meaningful. Persist it before returning so a fresh-manifest sync creates
+    // a fully reproducible lock in one command.
+    lock_kally_checksums(root, None)?;
     Ok(lock.packages.len())
+}
+
+/// Reconcile declarative intent before materialization.  The KLC core decides
+/// whether each entry is an exact lock reuse, an initial resolution, or a
+/// forbidden divergence; this function only performs the selected host I/O.
+fn reconcile_kally_manifest(root: &Path) -> Result<kally::Lock, String> {
+    let manifest_path = root.join("kally.toml");
+    let lock_path = root.join("kally.lock");
+    if !manifest_path.exists() {
+        return kally::load(&lock_path);
+    }
+    let manifest = kally::load_manifest(&manifest_path)?;
+    let mut lock = kally::load(&lock_path)?;
+    let mut changed = false;
+    for (name, requested) in &manifest.packages {
+        match kally::resolution_action(requested, lock.packages.get(name))? {
+            kally::ResolutionAction::Keep => {}
+            kally::ResolutionAction::Diverged => {
+                return Err(format!(
+                    "package `{name}` differs from kally.toml; run `kally update {name}`"
+                ));
+            }
+            kally::ResolutionAction::Resolve => {
+                let (revision, checksum, reference) = match kally::source_kind(&requested.source)? {
+                    kally::SourceKind::Path => {
+                        let path = root.join(kally::source_payload(&requested.source)?);
+                        (
+                            "local".to_owned(),
+                            kally::checksum_path(&path)?,
+                            "local".to_owned(),
+                        )
+                    }
+                    kally::SourceKind::Git => (
+                        resolve_git_revision(root, name, &requested.source, &requested.reference)?,
+                        String::new(),
+                        requested.reference.clone(),
+                    ),
+                };
+                lock.packages.insert(
+                    name.clone(),
+                    kally::Package {
+                        source: requested.source.clone(),
+                        reference,
+                        revision,
+                        checksum,
+                    },
+                );
+                changed = true;
+            }
+        }
+    }
+    let before = lock.packages.len();
+    lock.packages
+        .retain(|name, _| manifest.packages.contains_key(name));
+    changed |= lock.packages.len() != before;
+    if changed {
+        kally::save(&lock_path, &lock)?;
+    }
+    Ok(lock)
 }
 
 /// A checksum is calculated only after the exact locked Git commit has been
@@ -1083,21 +1205,11 @@ fn lock_kally_checksums(root: &Path, wanted: Option<&str>) -> Result<(), String>
 }
 
 fn git_source(source: &str) -> Result<(&str, &str), String> {
-    let value = source
-        .strip_prefix("git:")
-        .ok_or("Git source must start with `git:`")?;
+    if !kally::git_source_valid(source) {
+        return Err("Git source must be a safe `git:URL[#SUBDIR]` value".into());
+    }
+    let value = kally::source_payload(source)?;
     let (url, subdir) = value.split_once('#').unwrap_or((value, ""));
-    if url.is_empty() {
-        return Err("Git source has no URL".into());
-    }
-    let path = Path::new(subdir);
-    if path.is_absolute()
-        || path
-            .components()
-            .any(|part| matches!(part, std::path::Component::ParentDir))
-    {
-        return Err("Git package subdirectory must be a relative path without `..`".into());
-    }
     Ok((url, subdir))
 }
 
@@ -1693,7 +1805,8 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let diagnostics = validate(&index);
+    let mut diagnostics = validate(&index);
+    diagnostics.extend(validate_host_libraries(&index, &manifest));
     for d in &diagnostics {
         let level = match d.severity {
             Severity::Warning => "warning",
@@ -2017,9 +2130,11 @@ fn file_command(command: &str, args: &[String]) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_numworks_name, default_ti_name, format_project_report, ui_settings_command,
+        default_numworks_name, default_ti_name, format_project_report, reconcile_kally_manifest,
+        ui_settings_command,
     };
     use kalcite_project::{AssetReport, ProjectReport};
+    use std::{fs, process::Command};
 
     #[test]
     fn numworks_default_name_is_ascii_and_bounded() {
@@ -2068,6 +2183,70 @@ mod tests {
         let root = std::env::temp_dir().join(format!("kalcite-ui-cli-{}", std::process::id()));
         let args = vec![root.display().to_string(), "--width".into(), "100".into()];
         assert_eq!(ui_settings_command(&args), std::process::ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn sync_resolves_an_unlocked_path_manifest() {
+        let root = std::env::temp_dir().join(format!("kally-reconcile-{}", std::process::id()));
+        fs::create_dir_all(root.join("package")).unwrap();
+        fs::write(root.join("package/lib.klc"), "class Package {}").unwrap();
+        let mut manifest = kally::Manifest::default();
+        manifest.version = 1;
+        manifest.packages.insert(
+            "demo".into(),
+            kally::ManifestPackage {
+                source: "path:package".into(),
+                reference: "local".into(),
+            },
+        );
+        kally::save_manifest(&root.join("kally.toml"), &manifest).unwrap();
+        let lock = reconcile_kally_manifest(&root).unwrap();
+        assert_eq!(lock.packages["demo"].revision, "local");
+        assert!(!lock.packages["demo"].checksum.is_empty());
+        assert!(root.join("kally.lock").is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn sync_resolves_and_materializes_an_unlocked_git_manifest() {
+        let root = std::env::temp_dir().join(format!("kally-git-sync-{}", std::process::id()));
+        let source = root.join("source");
+        let project = root.join("project");
+        fs::create_dir_all(source.join("package")).unwrap();
+        fs::write(source.join("package/lib.klc"), "class GitPackage {}").unwrap();
+        for args in [
+            vec!["init", "--quiet"],
+            vec!["config", "user.email", "tests@example.invalid"],
+            vec!["config", "user.name", "Kally tests"],
+            vec!["add", "."],
+            vec!["commit", "--quiet", "-m", "initial"],
+        ] {
+            assert!(
+                Command::new("git")
+                    .args(args)
+                    .current_dir(&source)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        fs::create_dir_all(&project).unwrap();
+        let mut manifest = kally::Manifest::default();
+        manifest.version = 1;
+        manifest.packages.insert(
+            "demo".into(),
+            kally::ManifestPackage {
+                source: format!("git:{}#package", source.display()),
+                reference: "HEAD".into(),
+            },
+        );
+        kally::save_manifest(&project.join("kally.toml"), &manifest).unwrap();
+        assert_eq!(super::sync_kally_packages(&project).unwrap(), 1);
+        let lock = kally::load(&project.join("kally.lock")).unwrap();
+        assert!(kally::revision_valid(&lock.packages["demo"].revision));
+        assert!(!lock.packages["demo"].checksum.is_empty());
+        assert!(project.join(".kally/packages/demo/lib.klc").is_file());
+        fs::remove_dir_all(root).unwrap();
     }
 }
 

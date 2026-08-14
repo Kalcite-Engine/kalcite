@@ -3,3 +3,9 @@ name="kally"
 version.workspace=true
 edition.workspace=true
 license.workspace=true
+
+[build-dependencies]
+kalcite-syntax = { path = "../kalcite-syntax" }
+kalcite-hir = { path = "../kalcite-hir" }
+kalcite-mir = { path = "../kalcite-mir" }
+kalcite-backend-rust = { path = "../kalcite-backend-rust" }

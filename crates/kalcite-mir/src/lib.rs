@@ -131,6 +131,7 @@ impl Program {
             hir::Type::Bool | hir::Type::U8 | hir::Type::I8 => 1,
             hir::Type::U16 | hir::Type::I16 | hir::Type::Fx8 => 2,
             hir::Type::U32 | hir::Type::I32 | hir::Type::Vec2fx => 4,
+            hir::Type::BoundedString(n) => n.saturating_add(2),
             hir::Type::FixedArray(inner, n) => self.type_size(inner, visiting).saturating_mul(*n),
             hir::Type::Handle(_) => 4,
             hir::Type::Pool(inner, n) => self
