@@ -884,6 +884,25 @@ fn kally_add_command(args: &[String]) -> ExitCode {
         kally::SourceKind::Path => "local".to_owned(),
         kally::SourceKind::Git => reference,
     };
+    let manifest_path = root.join("kally.toml");
+    let mut manifest = match kally::load_manifest(&manifest_path) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            eprintln!("{}: {error}", manifest_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    manifest.packages.insert(
+        name.clone(),
+        kally::ManifestPackage {
+            source: source.clone(),
+            reference: locked_reference.clone(),
+        },
+    );
+    if let Err(error) = kally::save_manifest(&manifest_path, &manifest) {
+        eprintln!("{}: {error}", manifest_path.display());
+        return ExitCode::FAILURE;
+    }
     lock.packages.insert(
         name.clone(),
         kally::Package {
@@ -934,19 +953,40 @@ fn kally_update_command(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let manifest_path = root.join("kally.toml");
+    let manifest = match kally::load_manifest(&manifest_path) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            eprintln!("{}: {error}", manifest_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
     let mut updated = 0;
     for (name, package) in &mut lock.packages {
-        if wanted.is_some_and(|wanted| wanted != name)
-            || kally::source_kind(&package.source) != Ok(kally::SourceKind::Git)
-        {
+        if wanted.is_some_and(|wanted| wanted != name) {
             continue;
         }
-        let reference = if package.reference.is_empty() {
-            &package.revision
-        } else {
-            &package.reference
+        let requested = manifest.packages.get(name);
+        let source = requested
+            .map(|package| package.source.as_str())
+            .unwrap_or(&package.source);
+        if kally::source_kind(source) != Ok(kally::SourceKind::Git) {
+            continue;
+        }
+        let reference = requested
+            .map(|package| package.reference.clone())
+            .unwrap_or_else(|| {
+                if package.reference.is_empty() {
+                    package.revision.clone()
+                } else {
+                    package.reference.clone()
+                }
+            });
+        if let Some(requested) = requested {
+            package.source = requested.source.clone();
+            package.reference = requested.reference.clone();
         };
-        match resolve_git_revision(&root, name, &package.source, reference) {
+        match resolve_git_revision(&root, name, &package.source, &reference) {
             Ok(revision) => {
                 package.revision = revision;
                 package.checksum.clear();
@@ -996,6 +1036,19 @@ fn kally_remove_command(args: &[String]) -> ExitCode {
     };
     if lock.packages.remove(name).is_none() {
         eprintln!("package `{name}` is not locked");
+        return ExitCode::FAILURE;
+    }
+    let manifest_path = root.join("kally.toml");
+    let mut manifest = match kally::load_manifest(&manifest_path) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            eprintln!("{}: {error}", manifest_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    manifest.packages.remove(name);
+    if let Err(error) = kally::save_manifest(&manifest_path, &manifest) {
+        eprintln!("{}: {error}", manifest_path.display());
         return ExitCode::FAILURE;
     }
     match kally::save(&path, &lock) {

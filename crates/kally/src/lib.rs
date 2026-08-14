@@ -67,6 +67,16 @@ pub struct Package {
     pub revision: String,
     pub checksum: String,
 }
+#[derive(Default)]
+pub struct Manifest {
+    pub version: u32,
+    pub packages: BTreeMap<String, ManifestPackage>,
+}
+#[derive(Clone, Default)]
+pub struct ManifestPackage {
+    pub source: String,
+    pub reference: String,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceKind {
@@ -107,6 +117,11 @@ pub fn revision_valid(revision: &str) -> bool {
 pub fn checksum_valid(checksum: &str) -> bool {
     checksum.len() <= 17
         && klc_core::kally_checksum_valid(klc_runtime::BoundedString::<17>::from_str(checksum))
+}
+
+pub fn reference_valid(reference: &str) -> bool {
+    reference.len() <= 256
+        && klc_core::kally_reference_valid(klc_runtime::BoundedString::<256>::from_str(reference))
 }
 pub fn valid_name(name: &str) -> bool {
     klc_core::kally_valid_name(klc_runtime::BoundedString::<65>::from_str(name))
@@ -321,6 +336,113 @@ pub fn load(path: &Path) -> Result<Lock, String> {
     }
     Ok(lock)
 }
+
+/// Read the declarative dependency intent.  Unlike `kally.lock`, this file
+/// contains no resolved commit or checksum; it is safe to edit and review.
+pub fn load_manifest(path: &Path) -> Result<Manifest, String> {
+    if !path.exists() {
+        return Ok(Manifest {
+            version: 1,
+            packages: BTreeMap::new(),
+        });
+    }
+    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let mut manifest = Manifest {
+        version: 1,
+        packages: BTreeMap::new(),
+    };
+    let mut current = None;
+    let mut parser_state = 0u32;
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.len() > 512 {
+            return Err("manifest line exceeds Kally's 512-byte limit".into());
+        }
+        let kind =
+            klc_core::kally_lock_line_kind(klc_runtime::BoundedString::<512>::from_str(line));
+        if kind == 0 {
+            continue;
+        }
+        parser_state = klc_core::kally_manifest_transition(parser_state, kind);
+        if parser_state == 255 {
+            return Err(format!("invalid manifest structure near: {line}"));
+        }
+        if kind == 1 {
+            manifest.version = line
+                .strip_prefix("version=")
+                .ok_or("invalid manifest version")?
+                .parse()
+                .map_err(|_| "invalid manifest version")?;
+            continue;
+        }
+        if kind == 2 {
+            let name = line[1..line.len() - 1].to_string();
+            if !valid_name(&name) {
+                return Err(format!("invalid package name `{name}`"));
+            }
+            manifest.packages.entry(name.clone()).or_default();
+            current = Some(name);
+            continue;
+        }
+        let value_start =
+            klc_core::kally_lock_value_start(klc_runtime::BoundedString::<512>::from_str(line));
+        if value_start == 0 || value_start as usize > line.len() {
+            return Err(format!("invalid manifest line: {line}"));
+        }
+        let value = line[value_start as usize..].trim();
+        let name = current
+            .as_ref()
+            .ok_or("package property outside package section")?;
+        let package = manifest
+            .packages
+            .get_mut(name)
+            .expect("manifest section exists");
+        match kind {
+            3 => {
+                source_kind(value)?;
+                package.source = value.to_string();
+            }
+            4 => {
+                if !reference_valid(value) {
+                    return Err(format!("invalid reference for `{name}`"));
+                }
+                package.reference = value.to_string();
+            }
+            _ => return Err(format!("invalid manifest property near: {line}")),
+        }
+    }
+    if !klc_core::kally_manifest_complete(parser_state) {
+        return Err("manifest package is missing source or reference".into());
+    }
+    if !klc_core::kally_lock_version_supported(manifest.version) {
+        return Err(format!("unsupported manifest version {}", manifest.version));
+    }
+    Ok(manifest)
+}
+
+pub fn save_manifest(path: &Path, manifest: &Manifest) -> Result<(), String> {
+    if !klc_core::kally_lock_version_supported(manifest.version.max(1)) {
+        return Err(format!("unsupported manifest version {}", manifest.version));
+    }
+    let mut out = format!(
+        "# Kally manifest - requested dependencies\nversion={}\n",
+        manifest.version.max(1)
+    );
+    for (name, package) in &manifest.packages {
+        if !valid_name(name) {
+            return Err(format!("invalid package name `{name}`"));
+        }
+        source_kind(&package.source)?;
+        if !reference_valid(&package.reference) {
+            return Err(format!("invalid reference for `{name}`"));
+        }
+        out.push_str(&format!(
+            "\n[{name}]\nsource={}\nreference={}\n",
+            package.source, package.reference
+        ));
+    }
+    fs::write(path, out).map_err(|error| error.to_string())
+}
 pub fn save(path: &Path, lock: &Lock) -> Result<(), String> {
     let mut out = format!(
         "# Kally lockfile - generated, do not edit\nversion={}\n",
@@ -412,6 +534,30 @@ mod tests {
         let package = &restored.packages["ui"];
         assert_eq!(package.reference, "v0.3.0");
         assert_eq!(package.revision, "0123456789abcdef");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn manifest_is_kc_validated_and_round_trips() {
+        let root = std::env::temp_dir().join(format!("kally-manifest-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("kally.toml");
+        let mut manifest = Manifest {
+            version: 1,
+            packages: BTreeMap::new(),
+        };
+        manifest.packages.insert(
+            "ui".into(),
+            ManifestPackage {
+                source: "git:https://example.invalid/packages.git#ui".into(),
+                reference: "v1.2.3".into(),
+            },
+        );
+        save_manifest(&path, &manifest).unwrap();
+        let restored = load_manifest(&path).unwrap();
+        assert_eq!(restored.packages["ui"].reference, "v1.2.3");
+        fs::write(&path, "version=1\n[ui]\nsource=path:ui\n").unwrap();
+        assert!(load_manifest(&path).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 

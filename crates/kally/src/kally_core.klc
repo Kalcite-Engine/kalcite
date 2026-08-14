@@ -52,6 +52,18 @@ public bool kally_checksum_valid(String[17] checksum) {
     return true;
 }
 
+public bool kally_reference_valid(String[256] reference) {
+    u32 length = Text.length(reference);
+    if length == 0 { return false; }
+    u32 index = 0;
+    while index < length {
+        u8 byte = Text.byte_at(reference, index);
+        if byte <= 32 || byte == 127 { return false; }
+        index += 1;
+    }
+    return true;
+}
+
 public bool kally_git_source_valid(String[512] source) {
     if kally_source_kind(source) != 1 { return false; }
     u32 length = Text.length(source);
@@ -125,6 +137,34 @@ public u32 kally_lock_transition(u32 state, u32 kind) {
 
 public bool kally_lock_complete(u32 state) {
     return state == 0 || state == 32 || state == 31;
+}
+
+// Manifest state is deliberately separate from the lock state: a manifest
+// contains requested source/reference pairs; revision and checksum belong only
+// to kally.lock.  0=fresh, 32=header, 16..19=active package, 255=invalid.
+public u32 kally_manifest_transition(u32 state, u32 kind) {
+    if kind == 0 { return state; }
+    if kind == 1 {
+        if state == 0 { return 32; }
+        return 255;
+    }
+    if kind == 2 {
+        if state == 0 || state == 32 || state == 19 { return 16; }
+        return 255;
+    }
+    if kind == 3 {
+        if state == 16 || state == 18 { return state + 1; }
+        return 255;
+    }
+    if kind == 4 {
+        if state == 16 || state == 17 { return state + 2; }
+        return 255;
+    }
+    return 255;
+}
+
+public bool kally_manifest_complete(u32 state) {
+    return state == 0 || state == 32 || state == 19;
 }
 
 // 0=blank/comment, 1=version, 2=package section, 3..6=properties, 255=bad.
