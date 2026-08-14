@@ -258,6 +258,7 @@ pub fn load(path: &Path) -> Result<Lock, String> {
         packages: BTreeMap::new(),
     };
     let mut current = None;
+    let mut parser_state = 0u32;
     for raw in text.lines() {
         let line = raw.trim();
         if line.len() > 512 {
@@ -267,6 +268,10 @@ pub fn load(path: &Path) -> Result<Lock, String> {
             klc_core::kally_lock_line_kind(klc_runtime::BoundedString::<512>::from_str(line));
         if kind == 0 {
             continue;
+        }
+        parser_state = klc_core::kally_lock_transition(parser_state, kind);
+        if parser_state == 255 {
+            return Err(format!("invalid lockfile structure near: {line}"));
         }
         if kind == 1 {
             let v = line
@@ -310,6 +315,9 @@ pub fn load(path: &Path) -> Result<Lock, String> {
             6 if key.trim() == "checksum" => package.checksum = value.trim().to_string(),
             _ => return Err(format!("invalid lockfile key: {}", key.trim())),
         }
+    }
+    if !klc_core::kally_lock_complete(parser_state) {
+        return Err("lockfile package is missing required properties".into());
     }
     Ok(lock)
 }
@@ -440,6 +448,18 @@ mod tests {
         fs::write(
             &path,
             "version=1\n[demo]\nsource=https://example.invalid/demo\n",
+        )
+        .unwrap();
+        assert!(load(&path).is_err());
+        fs::write(
+            &path,
+            "version=1\n[demo]\nsource=path:demo\nsource=path:again\nreference=local\nrevision=local\nchecksum=0123456789abcdef\n",
+        )
+        .unwrap();
+        assert!(load(&path).is_err());
+        fs::write(
+            &path,
+            "version=1\n[demo]\nsource=path:demo\nreference=local\nrevision=local\n",
         )
         .unwrap();
         assert!(load(&path).is_err());

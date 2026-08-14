@@ -91,6 +91,42 @@ public u32 kally_lock_value_start(String[512] line) {
     return 0;
 }
 
+// Lockfile parser state: 0=fresh, 32=header, 16..31=current package where
+// bits 0..3 mean source/reference/revision/checksum.  255 is a syntax error.
+// The host only stores values after this KLC transition accepts the event.
+public u32 kally_lock_transition(u32 state, u32 kind) {
+    if kind == 0 { return state; }
+    if kind == 1 {
+        if state == 0 { return 32; }
+        return 255;
+    }
+    if kind == 2 {
+        if state == 0 || state == 32 || state == 31 { return 16; }
+        return 255;
+    }
+    if kind == 3 {
+        if state == 16 || state == 18 || state == 20 || state == 22 || state == 24 || state == 26 || state == 28 || state == 30 { return state + 1; }
+        return 255;
+    }
+    if kind == 4 {
+        if state == 16 || state == 17 || state == 20 || state == 21 || state == 24 || state == 25 || state == 28 || state == 29 { return state + 2; }
+        return 255;
+    }
+    if kind == 5 {
+        if state == 16 || state == 17 || state == 18 || state == 19 || state == 24 || state == 25 || state == 26 || state == 27 { return state + 4; }
+        return 255;
+    }
+    if kind == 6 {
+        if state == 16 || state == 17 || state == 18 || state == 19 || state == 20 || state == 21 || state == 22 || state == 23 { return state + 8; }
+        return 255;
+    }
+    return 255;
+}
+
+public bool kally_lock_complete(u32 state) {
+    return state == 0 || state == 32 || state == 31;
+}
+
 // 0=blank/comment, 1=version, 2=package section, 3..6=properties, 255=bad.
 public u32 kally_lock_line_kind(String[512] line) {
     u32 length = Text.length(line);
