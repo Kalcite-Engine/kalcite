@@ -368,10 +368,8 @@ pub fn load(path: &Path) -> Result<Lock, String> {
             return Err(format!("invalid lockfile structure near: {line}"));
         }
         if kind == 1 {
-            let v = line
-                .strip_prefix("version=")
-                .ok_or("invalid lockfile version")?;
-            lock.version = v.parse().map_err(|_| "invalid lockfile version")?;
+            // The KLC classifier accepts only `version=1`.
+            lock.version = 1;
             continue;
         }
         if kind == 2 {
@@ -383,12 +381,6 @@ pub fn load(path: &Path) -> Result<Lock, String> {
             current = Some(name);
             continue;
         }
-        if !(3..=6).contains(&kind) {
-            return Err(format!("invalid lockfile line: {line}"));
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            return Err(format!("invalid lockfile line: {line}"));
-        };
         let value_start =
             klc_core::kally_lock_value_start(klc_runtime::BoundedString::<512>::from_str(line));
         if value_start == 0 || value_start as usize > line.len() {
@@ -398,16 +390,16 @@ pub fn load(path: &Path) -> Result<Lock, String> {
             return Err("package property outside package section".into());
         };
         let package = lock.packages.get_mut(name).unwrap();
+        let value = line[value_start as usize..].trim();
         match kind {
-            3 if key.trim() == "source" => {
-                let parsed = line[value_start as usize..].trim();
-                source_kind(parsed)?;
-                package.source = parsed.to_string();
+            3 => {
+                source_kind(value)?;
+                package.source = value.to_string();
             }
-            4 if key.trim() == "reference" => package.reference = value.trim().to_string(),
-            5 if key.trim() == "revision" => package.revision = value.trim().to_string(),
-            6 if key.trim() == "checksum" => package.checksum = value.trim().to_string(),
-            _ => return Err(format!("invalid lockfile key: {}", key.trim())),
+            4 => package.reference = value.to_string(),
+            5 => package.revision = value.to_string(),
+            6 => package.checksum = value.to_string(),
+            _ => unreachable!("KLC transition accepts only lock properties"),
         }
     }
     if !klc_core::kally_lock_complete(parser_state) {
@@ -447,11 +439,8 @@ pub fn load_manifest(path: &Path) -> Result<Manifest, String> {
             return Err(format!("invalid manifest structure near: {line}"));
         }
         if kind == 1 {
-            manifest.version = line
-                .strip_prefix("version=")
-                .ok_or("invalid manifest version")?
-                .parse()
-                .map_err(|_| "invalid manifest version")?;
+            // The KLC classifier accepts only `version=1`.
+            manifest.version = 1;
             continue;
         }
         if kind == 2 {
