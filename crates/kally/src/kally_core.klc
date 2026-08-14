@@ -64,6 +64,38 @@ public bool kally_reference_valid(String[256] reference) {
     return true;
 }
 
+public bool kally_source_matches(String[512] left, String[512] right) {
+    u32 length = Text.length(left);
+    if length != Text.length(right) { return false; }
+    u32 index = 0;
+    while index < length {
+        if Text.byte_at(left, index) != Text.byte_at(right, index) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+public bool kally_reference_matches(String[256] left, String[256] right) {
+    u32 length = Text.length(left);
+    if length != Text.length(right) { return false; }
+    u32 index = 0;
+    while index < length {
+        if Text.byte_at(left, index) != Text.byte_at(right, index) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// 0=keep an exact lock, 1=perform the first resolution, 2=manifest/lock
+// divergence (requires explicit `kally update`), 255=invalid request.
+public u32 kally_resolution_action(u32 requested_kind, u32 locked_kind, bool has_lock, bool source_matches, bool reference_matches) {
+    if requested_kind != 1 && requested_kind != 2 { return 255; }
+    if !has_lock { return 1; }
+    if locked_kind != requested_kind { return 2; }
+    if !source_matches || !reference_matches { return 2; }
+    return 0;
+}
+
 public bool kally_git_source_valid(String[512] source) {
     if kally_source_kind(source) != 1 { return false; }
     u32 length = Text.length(source);

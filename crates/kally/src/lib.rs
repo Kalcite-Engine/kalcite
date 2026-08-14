@@ -84,6 +84,13 @@ pub enum SourceKind {
     Path,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResolutionAction {
+    Keep,
+    Resolve,
+    Diverged,
+}
+
 pub fn source_kind(source: &str) -> Result<SourceKind, String> {
     if source.len() > 512 {
         return Err("package source exceeds Kally's 512-byte limit".into());
@@ -122,6 +129,57 @@ pub fn checksum_valid(checksum: &str) -> bool {
 pub fn reference_valid(reference: &str) -> bool {
     reference.len() <= 256
         && klc_core::kally_reference_valid(klc_runtime::BoundedString::<256>::from_str(reference))
+}
+
+pub fn resolution_action(
+    requested: &ManifestPackage,
+    locked: Option<&Package>,
+) -> Result<ResolutionAction, String> {
+    let requested_kind = match source_kind(&requested.source)? {
+        SourceKind::Git => 1,
+        SourceKind::Path => 2,
+    };
+    let (locked_kind, has_lock, source_matches, reference_matches) = if let Some(locked) = locked {
+        let kind = match source_kind(&locked.source)? {
+            SourceKind::Git => 1,
+            SourceKind::Path => 2,
+        };
+        if requested.source.len() > 512
+            || locked.source.len() > 512
+            || requested.reference.len() > 256
+            || locked.reference.len() > 256
+        {
+            return Err(
+                "dependency source or reference exceeds Kally's bounded resolver input".into(),
+            );
+        }
+        (
+            kind,
+            true,
+            klc_core::kally_source_matches(
+                klc_runtime::BoundedString::<512>::from_str(&requested.source),
+                klc_runtime::BoundedString::<512>::from_str(&locked.source),
+            ),
+            klc_core::kally_reference_matches(
+                klc_runtime::BoundedString::<256>::from_str(&requested.reference),
+                klc_runtime::BoundedString::<256>::from_str(&locked.reference),
+            ),
+        )
+    } else {
+        (0, false, false, false)
+    };
+    match klc_core::kally_resolution_action(
+        requested_kind,
+        locked_kind,
+        has_lock,
+        source_matches,
+        reference_matches,
+    ) {
+        0 => Ok(ResolutionAction::Keep),
+        1 => Ok(ResolutionAction::Resolve),
+        2 => Ok(ResolutionAction::Diverged),
+        _ => Err("invalid Kally dependency resolution state".into()),
+    }
 }
 pub fn valid_name(name: &str) -> bool {
     klc_core::kally_valid_name(klc_runtime::BoundedString::<65>::from_str(name))
@@ -559,6 +617,36 @@ mod tests {
         fs::write(&path, "version=1\n[ui]\nsource=path:ui\n").unwrap();
         assert!(load_manifest(&path).is_err());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn klc_resolver_distinguishes_initial_lock_and_divergence() {
+        let requested = ManifestPackage {
+            source: "git:https://example.invalid/p.git".into(),
+            reference: "main".into(),
+        };
+        assert_eq!(
+            resolution_action(&requested, None).unwrap(),
+            ResolutionAction::Resolve
+        );
+        let locked = Package {
+            source: requested.source.clone(),
+            reference: requested.reference.clone(),
+            revision: "0123456789abcdef".into(),
+            checksum: String::new(),
+        };
+        assert_eq!(
+            resolution_action(&requested, Some(&locked)).unwrap(),
+            ResolutionAction::Keep
+        );
+        let changed = ManifestPackage {
+            source: requested.source.clone(),
+            reference: "next".into(),
+        };
+        assert_eq!(
+            resolution_action(&changed, Some(&locked)).unwrap(),
+            ResolutionAction::Diverged
+        );
     }
 
     #[test]

@@ -11,6 +11,10 @@ branch/tag. `kally.lock` is generated from it and records the immutable commit
 and checksum used by normal builds. Commit both files; do not commit
 `.kally/packages/`.
 
+On a fresh checkout, `kally sync` performs the initial resolution when a
+manifest entry has no lock entry. Once locked, a manifest change deliberately
+requires `kally update` so ordinary syncs never advance a Git dependency.
+
 ## Add a package from a monorepo
 
 Use a Git URL prefixed with `git:`. An optional `#SUBDIR` selects one package

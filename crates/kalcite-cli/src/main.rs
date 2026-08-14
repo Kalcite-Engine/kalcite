@@ -1080,7 +1080,7 @@ fn kally_sync_command(args: &[String]) -> ExitCode {
 }
 
 fn sync_kally_packages(root: &Path) -> Result<usize, String> {
-    let lock = kally::load(&root.join("kally.lock"))?;
+    let lock = reconcile_kally_manifest(root)?;
     let cache = root.join(".kally/packages");
     fs::create_dir_all(&cache).map_err(|error| error.to_string())?;
     if let Err(error) = kally::verify(&lock, &cache) {
@@ -1115,6 +1115,65 @@ fn sync_kally_packages(root: &Path) -> Result<usize, String> {
         }
     }
     Ok(lock.packages.len())
+}
+
+/// Reconcile declarative intent before materialization.  The KLC core decides
+/// whether each entry is an exact lock reuse, an initial resolution, or a
+/// forbidden divergence; this function only performs the selected host I/O.
+fn reconcile_kally_manifest(root: &Path) -> Result<kally::Lock, String> {
+    let manifest_path = root.join("kally.toml");
+    let lock_path = root.join("kally.lock");
+    if !manifest_path.exists() {
+        return kally::load(&lock_path);
+    }
+    let manifest = kally::load_manifest(&manifest_path)?;
+    let mut lock = kally::load(&lock_path)?;
+    let mut changed = false;
+    for (name, requested) in &manifest.packages {
+        match kally::resolution_action(requested, lock.packages.get(name))? {
+            kally::ResolutionAction::Keep => {}
+            kally::ResolutionAction::Diverged => {
+                return Err(format!(
+                    "package `{name}` differs from kally.toml; run `kally update {name}`"
+                ));
+            }
+            kally::ResolutionAction::Resolve => {
+                let (revision, checksum, reference) = match kally::source_kind(&requested.source)? {
+                    kally::SourceKind::Path => {
+                        let path = root.join(kally::source_payload(&requested.source)?);
+                        (
+                            "local".to_owned(),
+                            kally::checksum_path(&path)?,
+                            "local".to_owned(),
+                        )
+                    }
+                    kally::SourceKind::Git => (
+                        resolve_git_revision(root, name, &requested.source, &requested.reference)?,
+                        String::new(),
+                        requested.reference.clone(),
+                    ),
+                };
+                lock.packages.insert(
+                    name.clone(),
+                    kally::Package {
+                        source: requested.source.clone(),
+                        reference,
+                        revision,
+                        checksum,
+                    },
+                );
+                changed = true;
+            }
+        }
+    }
+    let before = lock.packages.len();
+    lock.packages
+        .retain(|name, _| manifest.packages.contains_key(name));
+    changed |= lock.packages.len() != before;
+    if changed {
+        kally::save(&lock_path, &lock)?;
+    }
+    Ok(lock)
 }
 
 /// A checksum is calculated only after the exact locked Git commit has been
@@ -2067,9 +2126,11 @@ fn file_command(command: &str, args: &[String]) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_numworks_name, default_ti_name, format_project_report, ui_settings_command,
+        default_numworks_name, default_ti_name, format_project_report, reconcile_kally_manifest,
+        ui_settings_command,
     };
     use kalcite_project::{AssetReport, ProjectReport};
+    use std::fs;
 
     #[test]
     fn numworks_default_name_is_ascii_and_bounded() {
@@ -2118,6 +2179,28 @@ mod tests {
         let root = std::env::temp_dir().join(format!("kalcite-ui-cli-{}", std::process::id()));
         let args = vec![root.display().to_string(), "--width".into(), "100".into()];
         assert_eq!(ui_settings_command(&args), std::process::ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn sync_resolves_an_unlocked_path_manifest() {
+        let root = std::env::temp_dir().join(format!("kally-reconcile-{}", std::process::id()));
+        fs::create_dir_all(root.join("package")).unwrap();
+        fs::write(root.join("package/lib.klc"), "class Package {}").unwrap();
+        let mut manifest = kally::Manifest::default();
+        manifest.version = 1;
+        manifest.packages.insert(
+            "demo".into(),
+            kally::ManifestPackage {
+                source: "path:package".into(),
+                reference: "local".into(),
+            },
+        );
+        kally::save_manifest(&root.join("kally.toml"), &manifest).unwrap();
+        let lock = reconcile_kally_manifest(&root).unwrap();
+        assert_eq!(lock.packages["demo"].revision, "local");
+        assert!(!lock.packages["demo"].checksum.is_empty());
+        assert!(root.join("kally.lock").is_file());
+        fs::remove_dir_all(root).unwrap();
     }
 }
 
