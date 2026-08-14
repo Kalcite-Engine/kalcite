@@ -21,7 +21,6 @@ members = [
   "crates/kalcite-platform-headless",
   "crates/kalcite-platform-numworks",
   "crates/kalcite-scene",
-  "crates/kalcite-lsp",
   "crates/kalcite-assets",
   "crates/kalcite-renderer",
   "crates/kalcite-physics2d",
@@ -33,7 +32,6 @@ members = [
   "crates/kalcite-package",
   "crates/kalcite-mir-opt",
   "crates/kalcite-test-runner",
-  "crates/kalcite-editor",
   "examples/pong",
 ]
 

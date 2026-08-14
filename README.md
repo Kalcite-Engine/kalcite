@@ -42,6 +42,13 @@ The crates are maintained together in this workspace so the compiler, runtime,
 engine, and backends can evolve in one commit. The documentation and showcase
 sites are the repository's only submodules; see [`REPOSITORIES.md`](REPOSITORIES.md).
 
+## Related products
+
+- [Kalcite LSP](https://github.com/Kalcite-Engine/kalcite-lsp) is an independent
+  Language Server Protocol implementation that consumes a versioned Kalcite core.
+- [Kalcite Editor](https://github.com/Kalcite-Engine/kalcite-editor) is the
+  independent native graphical editor for Kalcite projects.
+
 ## Usage
 
 ```bash
