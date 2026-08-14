@@ -12,7 +12,7 @@ Principes : aucune VM, aucun GC, aucune allocation implicite, objets ergonomique
 
 Un `.kco` n’est pas une VM embarquée : c’est un produit de build transportable contenant actuellement le code Rust `no_std` généré. Les versions suivantes utiliseront des sections HIR/MIR, assets et relocations.
 
-## Sous-projets indépendants
+## Workspace Rust
 
 ```text
 crates/kalcite-syntax              Lexer, parser et AST
@@ -38,7 +38,10 @@ editors/tree-sitter-kalcite        Grammaire partagée pour Zed
 examples/pong                      Jeu exemple
 ```
 
-Chaque crate possède son propre dépôt Git. Le dépôt racine est un **super-projet** qui référence les commits des sous-dépôts avec des gitlinks, à la manière de sous-modules. Voir [`REPOSITORIES.md`](REPOSITORIES.md).
+Les crates sont maintenues ensemble dans ce workspace afin que le compilateur,
+le runtime, le moteur et les backends puissent évoluer dans un même commit.
+Les sites de documentation et vitrine sont les seuls sous-modules du dépôt ;
+voir [`REPOSITORIES.md`](REPOSITORIES.md).
 
 ## Utilisation
 

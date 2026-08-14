@@ -1,0 +1,6 @@
+[submodule "kalcite-docs"]
+	path = kalcite-docs
+	url = https://github.com/Kalcite-Engine/kalcite-docs.git
+[submodule "kalcite-website"]
+	path = kalcite-website
+	url = https://github.com/Kalcite-Engine/kalcite-website.git
