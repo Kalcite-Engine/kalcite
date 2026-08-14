@@ -204,7 +204,7 @@ pub fn target_capabilities(target: &str) -> &'static [&'static str] {
         "numworks" => &["keyboard"],
         // The desktop runner currently exposes only the services it actually
         // implements. Rich desktop UI capabilities remain planned work.
-        "desktop" => &["window", "keyboard"],
+        "desktop" => &["window", "keyboard", "filesystem"],
         // Web is a declared object target, not a shipped platform backend.
         "web" | "portable" => &[],
         _ => &[],
@@ -1063,6 +1063,41 @@ pub fn validate(index: &ProjectIndex) -> Vec<ProjectDiagnostic> {
                     "KLP1001",
                     file,
                     format!("la classe globale `{name}` est déclarée dans plusieurs scripts"),
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// Host libraries are opt-in: importing one is a build-time declaration of
+/// the capability it needs, rather than an implicit platform fallback.
+pub fn validate_host_libraries(
+    index: &ProjectIndex,
+    manifest: &ProjectManifest,
+) -> Vec<ProjectDiagnostic> {
+    let mut out = Vec::new();
+    for script in &index.scripts {
+        for item in &script.module.items {
+            let Item::Use(use_decl) = item else {
+                continue;
+            };
+            let name = use_decl.path.join(".");
+            let required = match name.as_str() {
+                "std.fs" => Some("filesystem"),
+                _ => None,
+            };
+            if let Some(capability) = required
+                && !manifest
+                    .capabilities
+                    .iter()
+                    .any(|value| value == capability)
+            {
+                out.push(diag(
+                    Severity::Error,
+                    "KLP1010",
+                    &script.path,
+                    format!("library `{name}` requires manifest capability `{capability}`"),
                 ));
             }
         }
@@ -2574,6 +2609,34 @@ mod tests {
     }
 
     #[test]
+    fn filesystem_library_requires_explicit_capability() {
+        let source = "use std.fs; public class Tool {}".to_string();
+        let index = ProjectIndex {
+            scripts: vec![ScriptUnit {
+                path: PathBuf::from("scripts/tool.klc"),
+                module: parse(&source).unwrap(),
+                source,
+            }],
+            ..ProjectIndex::default()
+        };
+        let manifest = ProjectManifest {
+            target: "desktop".into(),
+            ..ProjectManifest::default()
+        };
+        assert!(
+            validate_host_libraries(&index, &manifest)
+                .iter()
+                .any(|item| item.code == "KLP1010")
+        );
+        let manifest = ProjectManifest {
+            target: "desktop".into(),
+            capabilities: vec!["filesystem".into()],
+            ..ProjectManifest::default()
+        };
+        assert!(validate_host_libraries(&index, &manifest).is_empty());
+    }
+
+    #[test]
     fn ui_profile_requires_a_window_capability() {
         let manifest = ProjectManifest {
             target: "numworks".into(),
@@ -2639,7 +2702,10 @@ mod tests {
         );
 
         assert_eq!(report.required_capabilities, ["keyboard", "window"]);
-        assert_eq!(report.provided_capabilities, ["window", "keyboard"]);
+        assert_eq!(
+            report.provided_capabilities,
+            ["window", "keyboard", "filesystem"]
+        );
         assert_eq!(report.scene_node_count, 2);
         assert_eq!(report.scene_autoload_count, 1);
         assert_eq!(report.pools.len(), 1);

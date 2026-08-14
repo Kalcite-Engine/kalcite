@@ -35,6 +35,16 @@ pub const LIBRARIES: &[Library] = &[
         source: None,
     },
     Library {
+        name: "std.hash",
+        kind: LibraryKind::Rust,
+        source: None,
+    },
+    Library {
+        name: "std.fs",
+        kind: LibraryKind::Rust,
+        source: None,
+    },
+    Library {
         name: "std.bits",
         kind: LibraryKind::Rust,
         source: None,

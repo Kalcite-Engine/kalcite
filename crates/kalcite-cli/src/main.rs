@@ -2,7 +2,7 @@ use kalcite_linter::{Severity, has_errors, lint};
 use kalcite_object::Target;
 use kalcite_project::{
     AssetReport, ProjectReport, discover, discover_scenes, find_root, init_project, load_manifest,
-    required_capabilities, validate, validate_manifest, validate_scene,
+    required_capabilities, validate, validate_host_libraries, validate_manifest, validate_scene,
 };
 use std::{
     env, fs,
@@ -1693,7 +1693,8 @@ fn project_command(args: &[String], build: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let diagnostics = validate(&index);
+    let mut diagnostics = validate(&index);
+    diagnostics.extend(validate_host_libraries(&index, &manifest));
     for d in &diagnostics {
         let level = match d.severity {
             Severity::Warning => "warning",
