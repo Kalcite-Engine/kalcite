@@ -955,7 +955,7 @@ pub fn load_manifest(root: &Path) -> Result<ProjectManifest, ProjectError> {
 pub fn discover(root: &Path, manifest: &ProjectManifest) -> Result<ProjectIndex, ProjectError> {
     let mut paths = Vec::new();
     collect_klc(&root.join(&manifest.scripts_dir), &mut paths)?;
-    let package_cache = root.join(".kalcite/packages");
+    let package_cache = root.join(".kally/packages");
     if package_cache.is_dir() {
         let mut packages = fs::read_dir(&package_cache)?.collect::<Result<Vec<_>, _>>()?;
         packages.sort_by_key(|entry| entry.file_name());
@@ -2658,14 +2658,14 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("kalcite-project-package-{}", std::process::id()));
         fs::create_dir_all(root.join("scripts")).unwrap();
-        fs::create_dir_all(root.join(".kalcite/packages/demo/scripts")).unwrap();
+        fs::create_dir_all(root.join(".kally/packages/demo/scripts")).unwrap();
         fs::write(
             root.join("scripts/main.klc"),
             "@scene class Main extends Game {}",
         )
         .unwrap();
         fs::write(
-            root.join(".kalcite/packages/demo/scripts/bonus.klc"),
+            root.join(".kally/packages/demo/scripts/bonus.klc"),
             "class PackageBonus extends Node {}",
         )
         .unwrap();

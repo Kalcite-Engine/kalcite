@@ -12,13 +12,13 @@ use std::{
 
 fn usage() {
     eprintln!(
-        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR] [--target TARGET] [--profile cli|ui|game2d|embedded|wasm] [--report]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|ti|web] [--profile cli|ui|game2d|embedded|wasm] [--report]\n  kalcite ui-settings [DIR] [--title TITLE] [--width N] [--height N]\n  kalcite build-app FILE.klc --target numworks|desktop|ti [-o OUTPUT] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite build-ti FILE.klc [-o GAME.8xp] [--name NAME] [--no-build]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite package-lock [DIR]\n  kalcite package-add NAME git:URL[#SUBDIR] [BRANCH_OR_TAG] [DIR]\n  kalcite package-update [NAME] [DIR]\n  kalcite package-remove NAME [DIR]\n  kalcite package-sync [DIR]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|ti|web]"
+        "usage:\n  kalcite init [DIR] [--name NAME]\n  kalcite project-check [DIR] [--target TARGET] [--profile cli|ui|game2d|embedded|wasm] [--report]\n  kalcite project-build [DIR] [--target portable|numworks|desktop|ti|web] [--profile cli|ui|game2d|embedded|wasm] [--report]\n  kalcite ui-settings [DIR] [--title TITLE] [--width N] [--height N]\n  kalcite build-app FILE.klc --target numworks|desktop|ti [-o OUTPUT] [--name NAME] [--no-build]\n  kalcite build-nwa FILE.klc [-o GAME.nwa] [--name NAME] [--no-build] [--install]\n  kalcite build-ti FILE.klc [-o GAME.8xp] [--name NAME] [--no-build]\n  kalcite doctor numworks\n  kalcite libs\n  kalcite scene-check FILE.kscn\n  kalcite asset-png FILE.png [-o FILE.ksp]\n  kalcite test [DIR]\n  kalcite run FILE.klc [--name NAME] [--scale N] [--fps N] [--screenshot FILE.ppm]\n  kalcite check FILE.klc\n  kalcite lint FILE.klc\n  kalcite emit-mir FILE.klc\n  kalcite build FILE.klc [-o FILE.kco] [--target portable|numworks|desktop|ti|web]"
     );
 }
 
 fn kally_usage() {
     eprintln!(
-        "usage:\n  kally add NAME git:URL[#SUBDIR] [BRANCH_OR_TAG] [DIR]\n  kally update [NAME] [DIR]\n  kally sync [DIR]\n  kally remove NAME [DIR]\n  kally lock [DIR]\n\nKally manages Git packages for Kalcite projects. `add` resolves a branch or tag\nto an immutable commit in kalcite.lock; `update` is the only command that\nadvances a locked Git dependency."
+        "usage:\n  kally add NAME git:URL[#SUBDIR] [BRANCH_OR_TAG] [DIR]\n  kally update [NAME] [DIR]\n  kally sync [DIR]\n  kally remove NAME [DIR]\n  kally lock [DIR]\n\nKally manages Git packages for Kalcite projects. `add` resolves a branch or tag\nto an immutable commit in kally.lock; `update` is the only command that\nadvances a locked Git dependency."
     );
 }
 
@@ -38,11 +38,11 @@ fn main() -> ExitCode {
     };
     if is_kally {
         return match command {
-            "add" => package_add_command(&args[2..]),
-            "update" => package_update_command(&args[2..]),
-            "sync" => package_sync_command(&args[2..]),
-            "remove" => package_remove_command(&args[2..]),
-            "lock" => package_lock_command(&args[2..]),
+            "add" => kally_add_command(&args[2..]),
+            "update" => kally_update_command(&args[2..]),
+            "sync" => kally_sync_command(&args[2..]),
+            "remove" => kally_remove_command(&args[2..]),
+            "lock" => kally_lock_command(&args[2..]),
             "help" | "--help" | "-h" => {
                 kally_usage();
                 ExitCode::SUCCESS
@@ -66,11 +66,6 @@ fn main() -> ExitCode {
         "libs" => libs_command(),
         "scene-check" => scene_check_command(&args[2..]),
         "asset-png" => asset_png_command(&args[2..]),
-        "package-lock" => package_lock_command(&args[2..]),
-        "package-add" => package_add_command(&args[2..]),
-        "package-update" => package_update_command(&args[2..]),
-        "package-remove" => package_remove_command(&args[2..]),
-        "package-sync" => package_sync_command(&args[2..]),
         "test" => test_command(&args[2..]),
         "run" => run_command(&args[2..]),
         _ => file_command(command, &args[2..]),
@@ -207,7 +202,7 @@ fn build_desktop_command(args: &[String], run: bool, runner_args: &[String]) -> 
             eprintln!("no kalcite.toml found from {}", input.display());
             return ExitCode::FAILURE;
         };
-        if let Err(error) = sync_project_packages(&root) {
+        if let Err(error) = sync_kally_packages(&root) {
             eprintln!("package sync failed: {error}");
             return ExitCode::FAILURE;
         }
@@ -385,7 +380,7 @@ fn build_ti_command(args: &[String]) -> ExitCode {
             eprintln!("no kalcite.toml found from {}", input.display());
             return ExitCode::FAILURE;
         };
-        if let Err(error) = sync_project_packages(&root) {
+        if let Err(error) = sync_kally_packages(&root) {
             eprintln!("package sync failed: {error}");
             return ExitCode::FAILURE;
         }
@@ -552,7 +547,7 @@ fn build_nwa_command(args: &[String]) -> ExitCode {
             eprintln!("no kalcite.toml found from {}", input.display());
             return ExitCode::FAILURE;
         };
-        if let Err(error) = sync_project_packages(&root) {
+        if let Err(error) = sync_kally_packages(&root) {
             eprintln!("package sync failed: {error}");
             return ExitCode::FAILURE;
         }
@@ -807,20 +802,20 @@ fn asset_png_command(args: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn package_lock_command(args: &[String]) -> ExitCode {
+fn kally_lock_command(args: &[String]) -> ExitCode {
     let root = args
         .first()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    let path = root.join("kalcite.lock");
-    let lock = match kalcite_package::load(&path) {
+    let path = root.join("kally.lock");
+    let lock = match kally::load(&path) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{}: {e}", path.display());
             return ExitCode::FAILURE;
         }
     };
-    if let Err(e) = kalcite_package::save(&path, &lock) {
+    if let Err(e) = kally::save(&path, &lock) {
         eprintln!("{}: {e}", path.display());
         return ExitCode::FAILURE;
     }
@@ -832,13 +827,13 @@ fn package_lock_command(args: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn package_add_command(args: &[String]) -> ExitCode {
+fn kally_add_command(args: &[String]) -> ExitCode {
     if args.len() < 2 {
-        eprintln!("usage: kalcite package-add NAME git:URL[#SUBDIR] [BRANCH_OR_TAG] [DIR]");
+        eprintln!("usage: kally add NAME git:URL[#SUBDIR] [BRANCH_OR_TAG] [DIR]");
         return ExitCode::FAILURE;
     }
     let name = &args[0];
-    if !kalcite_package::valid_name(name) {
+    if !kally::valid_name(name) {
         eprintln!("invalid package name `{name}`; use ASCII letters, digits, '-' or '_'");
         return ExitCode::FAILURE;
     }
@@ -852,8 +847,8 @@ fn package_add_command(args: &[String]) -> ExitCode {
         .get(3)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    let path = root.join("kalcite.lock");
-    let mut lock = match kalcite_package::load(&path) {
+    let path = root.join("kally.lock");
+    let mut lock = match kally::load(&path) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{e}");
@@ -861,7 +856,7 @@ fn package_add_command(args: &[String]) -> ExitCode {
         }
     };
     let (revision, checksum) = if let Some(local) = source.strip_prefix("path:") {
-        match kalcite_package::checksum_path(&root.join(local)) {
+        match kally::checksum_path(&root.join(local)) {
             Ok(checksum) => ("local".into(), checksum),
             Err(error) => {
                 eprintln!("package `{name}`: {error}");
@@ -887,18 +882,16 @@ fn package_add_command(args: &[String]) -> ExitCode {
     };
     lock.packages.insert(
         name.clone(),
-        kalcite_package::Package {
+        kally::Package {
             source: source.clone(),
             reference: locked_reference,
             revision,
             checksum,
         },
     );
-    match kalcite_package::save(&path, &lock) {
+    match kally::save(&path, &lock) {
         Ok(()) => {
-            match sync_project_packages(&root)
-                .and_then(|_| lock_package_checksums(&root, Some(name)))
-            {
+            match sync_kally_packages(&root).and_then(|_| lock_kally_checksums(&root, Some(name))) {
                 Ok(()) => {
                     println!("added and locked package `{name}` at its resolved revision");
                     ExitCode::SUCCESS
@@ -918,19 +911,19 @@ fn package_add_command(args: &[String]) -> ExitCode {
 
 /// Update Git packages by resolving their declared branch or tag again. The
 /// lockfile records the resulting commit, so normal builds remain reproducible.
-fn package_update_command(args: &[String]) -> ExitCode {
+fn kally_update_command(args: &[String]) -> ExitCode {
     let (wanted, root) = match args {
         [] => (None, PathBuf::from(".")),
         [one] if one.starts_with('.') || Path::new(one).is_dir() => (None, PathBuf::from(one)),
         [one] => (Some(one.as_str()), PathBuf::from(".")),
         [name, root] => (Some(name.as_str()), PathBuf::from(root)),
         _ => {
-            eprintln!("usage: kalcite package-update [NAME] [DIR]");
+            eprintln!("usage: kally update [NAME] [DIR]");
             return ExitCode::FAILURE;
         }
     };
-    let path = root.join("kalcite.lock");
-    let mut lock = match kalcite_package::load(&path) {
+    let path = root.join("kally.lock");
+    let mut lock = match kally::load(&path) {
         Ok(lock) => lock,
         Err(error) => {
             eprintln!("{}: {error}", path.display());
@@ -963,11 +956,11 @@ fn package_update_command(args: &[String]) -> ExitCode {
         eprintln!("no Git package named `{}`", wanted.unwrap());
         return ExitCode::FAILURE;
     }
-    if let Err(error) = kalcite_package::save(&path, &lock) {
+    if let Err(error) = kally::save(&path, &lock) {
         eprintln!("{}: {error}", path.display());
         return ExitCode::FAILURE;
     }
-    match sync_project_packages(&root).and_then(|_| lock_package_checksums(&root, wanted)) {
+    match sync_kally_packages(&root).and_then(|_| lock_kally_checksums(&root, wanted)) {
         Ok(()) => {
             println!("updated {updated} Git package(s)");
             ExitCode::SUCCESS
@@ -978,17 +971,17 @@ fn package_update_command(args: &[String]) -> ExitCode {
         }
     }
 }
-fn package_remove_command(args: &[String]) -> ExitCode {
+fn kally_remove_command(args: &[String]) -> ExitCode {
     let Some(name) = args.first() else {
-        eprintln!("usage: kalcite package-remove NAME [DIR]");
+        eprintln!("usage: kally remove NAME [DIR]");
         return ExitCode::FAILURE;
     };
     let root = args
         .get(1)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    let path = root.join("kalcite.lock");
-    let mut lock = match kalcite_package::load(&path) {
+    let path = root.join("kally.lock");
+    let mut lock = match kally::load(&path) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{e}");
@@ -999,7 +992,7 @@ fn package_remove_command(args: &[String]) -> ExitCode {
         eprintln!("package `{name}` is not locked");
         return ExitCode::FAILURE;
     }
-    match kalcite_package::save(&path, &lock) {
+    match kally::save(&path, &lock) {
         Ok(()) => {
             println!("removed package `{name}`");
             ExitCode::SUCCESS
@@ -1010,12 +1003,12 @@ fn package_remove_command(args: &[String]) -> ExitCode {
         }
     }
 }
-fn package_sync_command(args: &[String]) -> ExitCode {
+fn kally_sync_command(args: &[String]) -> ExitCode {
     let root = args
         .first()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    match sync_project_packages(&root) {
+    match sync_kally_packages(&root) {
         Ok(count) => {
             println!("synced {count} packages");
             ExitCode::SUCCESS
@@ -1027,11 +1020,11 @@ fn package_sync_command(args: &[String]) -> ExitCode {
     }
 }
 
-fn sync_project_packages(root: &Path) -> Result<usize, String> {
-    let lock = kalcite_package::load(&root.join("kalcite.lock"))?;
-    let cache = root.join(".kalcite/packages");
+fn sync_kally_packages(root: &Path) -> Result<usize, String> {
+    let lock = kally::load(&root.join("kally.lock"))?;
+    let cache = root.join(".kally/packages");
     fs::create_dir_all(&cache).map_err(|error| error.to_string())?;
-    if let Err(error) = kalcite_package::verify(&lock, &cache) {
+    if let Err(error) = kally::verify(&lock, &cache) {
         // A missing cache is expected before sync; structural lock errors are not.
         if !error.contains("checksum mismatch") {
             return Err(format!("lockfile: {error}"));
@@ -1041,17 +1034,16 @@ fn sync_project_packages(root: &Path) -> Result<usize, String> {
         if let Some(local) = p.source.strip_prefix("path:") {
             let src = root.join(local);
             let dst = cache.join(name);
-            kalcite_package::materialize(&src, &dst)
-                .map_err(|error| format!("package `{name}`: {error}"))?;
+            kally::materialize(&src, &dst).map_err(|error| format!("package `{name}`: {error}"))?;
             if !p.checksum.is_empty() {
-                let got = kalcite_package::checksum_path(&dst)
+                let got = kally::checksum_path(&dst)
                     .map_err(|error| format!("package `{name}`: {error}"))?;
                 if got != p.checksum {
                     return Err(format!("package `{name}`: checksum mismatch"));
                 }
             }
         } else if p.source.starts_with("git:") {
-            let checksum = materialize_git_package(root, name, p)
+            let checksum = materialize_kally_git_package(root, name, p)
                 .map_err(|error| format!("package `{name}`: {error}"))?;
             if !p.checksum.is_empty() && checksum != p.checksum {
                 return Err(format!("package `{name}`: checksum mismatch"));
@@ -1069,23 +1061,23 @@ fn sync_project_packages(root: &Path) -> Result<usize, String> {
 /// A checksum is calculated only after the exact locked Git commit has been
 /// materialized. This keeps the lockfile a reproducible record of both the
 /// selected commit and the package subtree copied into the project cache.
-fn lock_package_checksums(root: &Path, wanted: Option<&str>) -> Result<(), String> {
-    let path = root.join("kalcite.lock");
-    let mut lock = kalcite_package::load(&path)?;
+fn lock_kally_checksums(root: &Path, wanted: Option<&str>) -> Result<(), String> {
+    let path = root.join("kally.lock");
+    let mut lock = kally::load(&path)?;
     let mut changed = false;
     for (name, package) in &mut lock.packages {
         if wanted.is_some_and(|wanted| wanted != name) {
             continue;
         }
-        let cached = root.join(".kalcite/packages").join(name);
+        let cached = root.join(".kally/packages").join(name);
         if cached.is_dir() {
-            package.checksum = kalcite_package::checksum_path(&cached)
+            package.checksum = kally::checksum_path(&cached)
                 .map_err(|error| format!("package `{name}`: {error}"))?;
             changed = true;
         }
     }
     if changed {
-        kalcite_package::save(&path, &lock)?;
+        kally::save(&path, &lock)?;
     }
     Ok(())
 }
@@ -1159,10 +1151,10 @@ fn resolve_git_revision(
     result
 }
 
-fn materialize_git_package(
+fn materialize_kally_git_package(
     root: &Path,
     name: &str,
-    package: &kalcite_package::Package,
+    package: &kally::Package,
 ) -> Result<String, String> {
     let (url, subdir) = git_source(&package.source)?;
     let stage = git_stage(root, name, "fetch");
@@ -1175,9 +1167,9 @@ fn materialize_git_package(
                 "package path `{subdir}` is not a directory in the selected commit"
             ));
         }
-        let destination = root.join(".kalcite/packages").join(name);
-        kalcite_package::materialize(&source, &destination)?;
-        kalcite_package::checksum_path(&destination)
+        let destination = root.join(".kally/packages").join(name);
+        kally::materialize(&source, &destination)?;
+        kally::checksum_path(&destination)
     })();
     let _ = fs::remove_dir_all(stage);
     result

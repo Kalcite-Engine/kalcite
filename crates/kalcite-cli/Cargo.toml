@@ -21,7 +21,7 @@ kalcite-object = { path = "../kalcite-object" }
 kalcite-stdlib = { path = "../kalcite-stdlib" }
 kalcite-scene = { path = "../kalcite-scene" }
 kalcite-assets = { path = "../kalcite-assets" }
-kalcite-package = { path = "../kalcite-package" }
+kally = { path = "../kally" }
 kalcite-test-runner = { path = "../kalcite-test-runner" }
 kalcite-backend-ti = { path = "../kalcite-backend-ti" }
 kalcite-input = { path = "../kalcite-input" }

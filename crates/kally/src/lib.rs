@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn directory_hash_and_materialization_are_deterministic() {
-        let root = std::env::temp_dir().join(format!("kalcite-package-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("kally-{}", std::process::id()));
         let source = root.join("source");
         let cache = root.join("cache/demo");
         fs::create_dir_all(source.join("scripts")).unwrap();
@@ -257,10 +257,9 @@ mod tests {
 
     #[test]
     fn lockfile_preserves_git_reference_and_commit() {
-        let root =
-            std::env::temp_dir().join(format!("kalcite-package-lock-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("kally-lock-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        let path = root.join("kalcite.lock");
+        let path = root.join("kally.lock");
         let mut lock = Lock::default();
         lock.packages.insert(
             "ui".into(),

@@ -104,12 +104,12 @@ dependencies = [
  "kalcite-input",
  "kalcite-linter",
  "kalcite-object",
- "kalcite-package",
  "kalcite-project",
  "kalcite-save",
  "kalcite-scene",
  "kalcite-stdlib",
  "kalcite-test-runner",
+ "kally",
 ]
 
 [[package]]
@@ -171,10 +171,6 @@ version = "0.14.0"
 [[package]]
 name = "kalcite-object"
 version = "0.2.0"
-
-[[package]]
-name = "kalcite-package"
-version = "0.14.0"
 
 [[package]]
 name = "kalcite-physics2d"
@@ -250,6 +246,10 @@ version = "0.14.0"
 
 [[package]]
 name = "kalcite-typecheck"
+version = "0.14.0"
+
+[[package]]
+name = "kally"
 version = "0.14.0"
 
 [[package]]

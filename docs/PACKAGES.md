@@ -1,10 +1,9 @@
 # Kally — Git packages
 
-Kally is the package manager for Kalcite projects. The `kalcite package-*`
-commands remain compatibility aliases, but new projects should use `kally`.
+Kally is the package manager for Kalcite projects.
 
 Kalcite packages are source dependencies. A project uses a package only after
-the CLI has copied its selected source subtree into `.kalcite/packages/`; that
+the CLI has copied its selected source subtree into `.kally/packages/`; that
 directory is compiler input and should not be edited.
 
 ## Add a package from a monorepo
@@ -55,5 +54,5 @@ kally add tween path:../kalcite-packages/packages/tween
 ```
 
 They are copied and checksummed when added. Use Git dependencies for releases
-and shared projects; do not commit `.kalcite/packages/`, but do commit
-`kalcite.lock`.
+and shared projects; do not commit `.kally/packages/`, but do commit
+`kally.lock`.
