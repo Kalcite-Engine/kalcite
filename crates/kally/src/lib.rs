@@ -23,6 +23,16 @@ mod klc_runtime {
             result.len = count as u16;
             result
         }
+        pub fn from_bytes(value: &[u8]) -> Self {
+            let mut result = Self {
+                len: 0,
+                bytes: [0; N],
+            };
+            let count = value.len().min(N).min(u16::MAX as usize);
+            result.bytes[..count].copy_from_slice(&value[..count]);
+            result.len = count as u16;
+            result
+        }
         #[inline]
         pub fn length(&self) -> u32 {
             self.len as u32
@@ -45,6 +55,10 @@ mod klc_runtime {
         #[inline]
         pub fn byte_at<const N: usize>(value: BoundedString<N>, index: u32) -> u8 {
             value.byte_at(index)
+        }
+        #[inline]
+        pub fn byte_at_u32<const N: usize>(value: BoundedString<N>, index: u32) -> u32 {
+            value.byte_at(index) as u32
         }
     }
 }
@@ -206,19 +220,23 @@ pub fn valid_name(name: &str) -> bool {
     klc_core::kally_valid_name(klc_runtime::BoundedString::<65>::from_str(name))
 }
 pub fn checksum(data: &[u8]) -> String {
-    let mut h = 14695981039346656037u64;
-    for b in data {
-        h ^= *b as u64;
-        h = h.wrapping_mul(1099511628211);
-    }
-    format!("{h:016x}")
+    let state = checksum_bytes([1, 0x1234_5678], data);
+    format!("{:08x}{:08x}", state[0], state[1])
 }
-fn hash_bytes(mut hash: u64, data: &[u8]) -> u64 {
-    for byte in data {
-        hash ^= *byte as u64;
-        hash = hash.wrapping_mul(1099511628211);
+fn checksum_bytes(mut state: [u32; 2], data: &[u8]) -> [u32; 2] {
+    for bytes in data.chunks(512) {
+        state[0] = klc_core::kally_checksum_chunk(
+            klc_runtime::BoundedString::<512>::from_bytes(bytes),
+            bytes.len() as u32,
+            state[0],
+        );
+        state[1] = klc_core::kally_checksum_chunk(
+            klc_runtime::BoundedString::<512>::from_bytes(bytes),
+            bytes.len() as u32,
+            state[1],
+        );
     }
-    hash
+    state
 }
 
 /// Hash a file or directory tree using normalized relative paths and sorted
@@ -227,13 +245,13 @@ pub fn checksum_path(path: &Path) -> Result<String, String> {
     let mut files = Vec::new();
     collect_files(path, path, &mut files)?;
     files.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut hash = 14695981039346656037u64;
+    let mut hash = [1, 0x1234_5678];
     for (relative, file) in files {
-        hash = hash_bytes(hash, relative.as_bytes());
-        hash = hash_bytes(hash, &[0]);
-        hash = hash_bytes(hash, &fs::read(file).map_err(|error| error.to_string())?);
+        hash = checksum_bytes(hash, relative.as_bytes());
+        hash = checksum_bytes(hash, &[0]);
+        hash = checksum_bytes(hash, &fs::read(file).map_err(|error| error.to_string())?);
     }
-    Ok(format!("{hash:016x}"))
+    Ok(format!("{:08x}{:08x}", hash[0], hash[1]))
 }
 
 fn collect_files(root: &Path, path: &Path, out: &mut Vec<(String, PathBuf)>) -> Result<(), String> {
@@ -571,6 +589,8 @@ mod tests {
     #[test]
     fn hash_stable() {
         assert_eq!(checksum(b"abc"), checksum(b"abc"));
+        assert_ne!(checksum(b"abc"), checksum(b"abd"));
+        assert!(checksum_valid(&checksum(b"abc")));
     }
 
     #[test]

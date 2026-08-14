@@ -27,6 +27,7 @@ pub struct Text;
 impl Text {
     #[inline] pub fn length<const N: usize>(value: BoundedString<N>) -> u32 { value.length() }
     #[inline] pub fn byte_at<const N: usize>(value: BoundedString<N>, index: u32) -> u8 { value.byte_at(index) }
+    #[inline] pub fn byte_at_u32<const N: usize>(value: BoundedString<N>, index: u32) -> u32 { value.byte_at(index) as u32 }
     #[inline] pub fn set_byte<const N: usize>(value: &mut BoundedString<N>, index: u32, byte: u8) -> bool { value.set_byte(index, byte) }
     #[inline] pub fn push_byte<const N: usize>(value: &mut BoundedString<N>, byte: u8) -> bool { value.push_byte(byte) }
     #[inline] pub fn equals<const N: usize>(left: BoundedString<N>, right: BoundedString<N>) -> bool { left.equals(&right) }

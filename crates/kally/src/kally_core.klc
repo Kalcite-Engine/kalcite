@@ -52,6 +52,21 @@ public bool kally_checksum_valid(String[17] checksum) {
     return true;
 }
 
+// Adler-32 is intentionally expressed in KLC.  The host streams fixed-size
+// byte buffers; this code owns the deterministic checksum state transition.
+public u32 kally_checksum_chunk(String[512] bytes, u32 length, u32 state) {
+    u32 a = state % 65536;
+    u32 b = state / 65536;
+    if a == 0 { a = 1; }
+    u32 index = 0;
+    while index < length {
+        a = (a + Text.byte_at_u32(bytes, index)) % 65521;
+        b = (b + a) % 65521;
+        index += 1;
+    }
+    return b * 65536 + a;
+}
+
 public bool kally_reference_valid(String[256] reference) {
     u32 length = Text.length(reference);
     if length == 0 { return false; }
