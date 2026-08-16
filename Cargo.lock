@@ -109,7 +109,6 @@ dependencies = [
  "kalcite-scene",
  "kalcite-stdlib",
  "kalcite-test-runner",
- "kally",
 ]
 
 [[package]]
@@ -247,16 +246,6 @@ version = "0.14.0"
 [[package]]
 name = "kalcite-typecheck"
 version = "0.14.0"
-
-[[package]]
-name = "kally"
-version = "0.14.0"
-dependencies = [
- "kalcite-backend-rust",
- "kalcite-hir",
- "kalcite-mir",
- "kalcite-syntax",
-]
 
 [[package]]
 name = "miniz_oxide"
