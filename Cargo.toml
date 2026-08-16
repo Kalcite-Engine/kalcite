@@ -29,7 +29,6 @@ members = [
   "crates/kalcite-save",
   "crates/kalcite-typecheck",
   "crates/kalcite-profiler",
-  "crates/kally",
   "crates/kalcite-mir-opt",
   "crates/kalcite-test-runner",
   "examples/pong",

@@ -9,10 +9,6 @@ default-run = "kalcite"
 name = "kalcite"
 path = "src/main.rs"
 
-[[bin]]
-name = "kally"
-path = "src/kally.rs"
-
 [dependencies]
 kalcite-compiler = { path = "../kalcite-compiler" }
 kalcite-linter = { path = "../kalcite-linter" }
@@ -21,7 +17,6 @@ kalcite-object = { path = "../kalcite-object" }
 kalcite-stdlib = { path = "../kalcite-stdlib" }
 kalcite-scene = { path = "../kalcite-scene" }
 kalcite-assets = { path = "../kalcite-assets" }
-kally = { path = "../kally" }
 kalcite-test-runner = { path = "../kalcite-test-runner" }
 kalcite-backend-ti = { path = "../kalcite-backend-ti" }
 kalcite-input = { path = "../kalcite-input" }
