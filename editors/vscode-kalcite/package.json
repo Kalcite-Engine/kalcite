@@ -1,9 +1,10 @@
 {
   "name": "kalcite-language",
   "displayName": "Kalcite Language",
-  "description": "Syntax highlighting, build tasks and lint integration for .klc files.",
-  "version": "0.3.0",
+  "description": "Kalcite syntax support and language-server integration for .klc files.",
+  "version": "0.4.0",
   "publisher": "kalcite",
+  "main": "./src/extension.js",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -11,6 +12,12 @@
     "Programming Languages",
     "Linters"
   ],
+  "activationEvents": [
+    "onLanguage:kalcite"
+  ],
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
   "contributes": {
     "languages": [
       {
@@ -57,6 +64,24 @@
         "language": "kalcite",
         "path": "./snippets/kalcite.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Kalcite",
+      "properties": {
+        "kalcite.languageServer.path": {
+          "type": "string",
+          "default": "kalcite-lsp",
+          "markdownDescription": "Path or command used to start the Kalcite language server."
+        },
+        "kalcite.languageServer.args": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "markdownDescription": "Arguments passed to the Kalcite language server."
+        }
+      }
+    }
   }
 }
