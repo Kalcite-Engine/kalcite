@@ -16,6 +16,12 @@ surface handle, allowing a toolkit to recreate only its swapchain/framebuffer.
 Destroying the application invalidates each directly embedded child as well,
 so an orphaned game view cannot retain a presentable GPU target.
 
+For pointer and touch routing, `SurfaceRegistry::embedded_at(parent, x, y)`
+performs an allocation-free hit test in the application’s logical coordinates.
+If embedded views overlap, the most recently created matching view wins; an
+adapter can then translate the event for that game surface without exposing its
+toolkit event object to the renderer.
+
 ```rust
 let app = surfaces.create(application)?;
 let game = surfaces.create(embedded_game)?;

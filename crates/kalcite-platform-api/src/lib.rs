@@ -88,6 +88,15 @@ impl EmbeddedView {
     pub const fn valid(self) -> bool {
         self.width > 0 && self.height > 0
     }
+
+    /// Check a point in the parent application's logical coordinate space.
+    /// Widening before subtraction keeps negative origins and large `u16`
+    /// dimensions well-defined without signed overflow.
+    pub const fn contains(self, x: i32, y: i32) -> bool {
+        let left = self.x as i32;
+        let top = self.y as i32;
+        x >= left && y >= top && x - left < self.width as i32 && y - top < self.height as i32
+    }
 }
 
 /// A generation-tagged GPU presentation target. Renderers can cache this
@@ -263,6 +272,29 @@ impl<const N: usize> SurfaceRegistry<N> {
         Ok((slot.parent != SurfaceId::INVALID).then_some(slot.view))
     }
 
+    /// Resolve a parent-coordinate point to the topmost directly embedded
+    /// game view. Native adapters can use this before translating pointer or
+    /// touch input, while the renderer remains independent of toolkit events.
+    pub fn embedded_at(
+        &self,
+        parent: SurfaceId,
+        x: i32,
+        y: i32,
+    ) -> Result<Option<SurfaceId>, SurfaceError> {
+        if self.slot(parent)?.descriptor.role != SurfaceRole::Application {
+            return Err(SurfaceError::InvalidEmbedding);
+        }
+        for (index, slot) in self.slots.iter().enumerate().rev() {
+            if slot.active && slot.parent == parent && slot.view.contains(x, y) {
+                return Ok(Some(SurfaceId {
+                    slot: index as u16,
+                    generation: slot.generation,
+                }));
+            }
+        }
+        Ok(None)
+    }
+
     fn slot(&self, id: SurfaceId) -> Result<&SurfaceSlot, SurfaceError> {
         let Some(slot) = self.slots.get(id.slot as usize) else {
             return Err(SurfaceError::StaleHandle);
@@ -381,5 +413,41 @@ mod surface_tests {
 
         assert!(!surfaces.accepts_gpu_target(target));
         assert_eq!(surfaces.gpu_target(game), Err(SurfaceError::StaleHandle));
+    }
+
+    #[test]
+    fn embedded_hit_test_routes_to_the_topmost_matching_game_view() {
+        let mut surfaces = SurfaceRegistry::<3>::default();
+        let app = surfaces.create(APP).unwrap();
+        let first = surfaces.create(GAME).unwrap();
+        let second = surfaces.create(GAME).unwrap();
+        surfaces
+            .embed(
+                app,
+                first,
+                EmbeddedView {
+                    x: -20,
+                    y: 10,
+                    width: 100,
+                    height: 80,
+                },
+            )
+            .unwrap();
+        surfaces
+            .embed(
+                app,
+                second,
+                EmbeddedView {
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 100,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(surfaces.embedded_at(app, -1, 20), Ok(Some(first)));
+        assert_eq!(surfaces.embedded_at(app, 20, 20), Ok(Some(second)));
+        assert_eq!(surfaces.embedded_at(app, 100, 20), Ok(None));
     }
 }
