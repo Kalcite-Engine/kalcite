@@ -185,6 +185,7 @@ name = "kalcite-platform-headless"
 version = "0.2.0"
 dependencies = [
  "kalcite-platform-api",
+ "kalcite-renderer",
 ]
 
 [[package]]

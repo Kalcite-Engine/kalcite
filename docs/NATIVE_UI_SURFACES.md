@@ -32,6 +32,13 @@ while a platform adapter compiles or presents the previous one. A future Metal,
 Vulkan, Direct3D, OpenGL, or Skia adapter consumes this common command frame;
 no renderer code needs to borrow a SwiftUI, GTK, Qt, WinUI, or Kotlin object.
 
+`kalcite-platform-headless::NativeSurfaceHost` is the executable reference for
+that presentation boundary. It owns a `SurfaceRegistry`, consumes a
+`RenderFrame` only after checking its target generation, and records the
+accepted presentation metrics. Toolkit adapters should follow the same order:
+validate, encode, then present. This keeps resize races out of adapter-specific
+code and is covered by a stale-target regression test.
+
 This is an ABI foundation, not a claim that every toolkit binding is already
 implemented. Platform crates can add adapters independently while preserving
 the same low-level surface and GPU contract.

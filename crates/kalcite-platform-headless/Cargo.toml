@@ -5,3 +5,4 @@ edition = "2024"
 license = "MIT"
 [dependencies]
 kalcite-platform-api={path="../kalcite-platform-api"}
+kalcite-renderer={path="../kalcite-renderer"}
