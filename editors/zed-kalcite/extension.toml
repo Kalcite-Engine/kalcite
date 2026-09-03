@@ -8,4 +8,4 @@ repository = "https://github.com/Kalcite-Engine/zed-kalcite"
 
 [grammars.kalcite]
 repository = "https://github.com/Kalcite-Engine/tree-sitter-kalcite"
-rev = "REPLACE_WITH_PUBLISHED_COMMIT"
+rev = "181291a2966d1a3782991f5336ebe85d35b40d1f"

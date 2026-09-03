@@ -1,5 +1,7 @@
 # Kalcite for Zed
 
-Zed extension for `.klc`. Before publishing, publish `tree-sitter-kalcite`,
-replace `REPLACE_WITH_PUBLISHED_COMMIT` with its exact commit, then install this
-directory as a development extension in Zed.
+This historical in-tree manifest pins the Kalcite Tree-sitter grammar. The
+complete, installable Zed client is maintained in the dedicated
+[`Kalcite-Engine/zed-kalcite`](https://github.com/Kalcite-Engine/zed-kalcite)
+repository. It includes language configuration, structural queries, and a
+`kalcite-lsp` launcher.
