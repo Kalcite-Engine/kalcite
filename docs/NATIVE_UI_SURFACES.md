@@ -22,6 +22,12 @@ If embedded views overlap, the most recently created matching view wins; an
 adapter can then translate the event for that game surface without exposing its
 toolkit event object to the renderer.
 
+`route_pointer` combines that hit test with an integer coordinate transform.
+It yields a `RoutedPointerEvent` in the embedded game’s logical pixel space,
+preserving the pointer phase and button. A miss stays available to the native
+application UI, so game input and SwiftUI/GTK/Qt/WinUI/Kotlin controls can
+share one window without competing for raw events.
+
 ```rust
 let app = surfaces.create(application)?;
 let game = surfaces.create(embedded_game)?;
