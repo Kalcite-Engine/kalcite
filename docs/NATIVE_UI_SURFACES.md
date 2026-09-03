@@ -25,6 +25,13 @@ Before presenting, an adapter calls `accepts_gpu_target`. This rejects a frame
 prepared for a destroyed or resized surface without relying on raw pointers or
 toolkit-specific lifetime rules.
 
+`kalcite-renderer` turns its sorted draw queue into an immutable `RenderFrame`
+through `Renderer::finish(target)`. The frame carries the `GpuTarget` used when
+it was recorded and detaches the queue so the game can record its next frame
+while a platform adapter compiles or presents the previous one. A future Metal,
+Vulkan, Direct3D, OpenGL, or Skia adapter consumes this common command frame;
+no renderer code needs to borrow a SwiftUI, GTK, Qt, WinUI, or Kotlin object.
+
 This is an ABI foundation, not a claim that every toolkit binding is already
 implemented. Platform crates can add adapters independently while preserving
 the same low-level surface and GPU contract.

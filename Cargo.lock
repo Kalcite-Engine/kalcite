@@ -219,6 +219,9 @@ dependencies = [
 [[package]]
 name = "kalcite-renderer"
 version = "0.14.0"
+dependencies = [
+ "kalcite-platform-api",
+]
 
 [[package]]
 name = "kalcite-runtime-core"
