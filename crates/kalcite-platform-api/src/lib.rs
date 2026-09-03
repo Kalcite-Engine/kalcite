@@ -181,6 +181,17 @@ impl<const N: usize> SurfaceRegistry<N> {
     }
 
     pub fn destroy(&mut self, id: SurfaceId) -> Result<(), SurfaceError> {
+        // Validate before mutating so a stale parent cannot invalidate a new
+        // surface that reused its slot. An embedded game is owned by its
+        // application surface, therefore it cannot outlive that parent.
+        self.slot(id)?;
+        for slot in &mut self.slots {
+            if slot.active && slot.parent == id {
+                slot.active = false;
+                slot.parent = SurfaceId::INVALID;
+                slot.view = EMPTY_VIEW;
+            }
+        }
         let slot = self.slot_mut(id)?;
         slot.active = false;
         slot.parent = SurfaceId::INVALID;
@@ -345,5 +356,30 @@ mod surface_tests {
             ),
             Err(SurfaceError::InvalidEmbedding)
         );
+    }
+
+    #[test]
+    fn destroying_an_application_invalidates_its_embedded_game_target() {
+        let mut surfaces = SurfaceRegistry::<2>::default();
+        let app = surfaces.create(APP).unwrap();
+        let game = surfaces.create(GAME).unwrap();
+        surfaces
+            .embed(
+                app,
+                game,
+                EmbeddedView {
+                    x: 0,
+                    y: 0,
+                    width: 320,
+                    height: 240,
+                },
+            )
+            .unwrap();
+        let target = surfaces.gpu_target(game).unwrap();
+
+        surfaces.destroy(app).unwrap();
+
+        assert!(!surfaces.accepts_gpu_target(target));
+        assert_eq!(surfaces.gpu_target(game), Err(SurfaceError::StaleHandle));
     }
 }

@@ -13,6 +13,8 @@ An application surface may embed an `EmbeddedGame` surface through
 `SurfaceRegistry::embed`. The renderer receives a `GpuTarget` from that child.
 Resizing the child invalidates the target generation but preserves the native
 surface handle, allowing a toolkit to recreate only its swapchain/framebuffer.
+Destroying the application invalidates each directly embedded child as well,
+so an orphaned game view cannot retain a presentable GPU target.
 
 ```rust
 let app = surfaces.create(application)?;
