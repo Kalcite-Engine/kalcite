@@ -3,3 +3,6 @@ name="kalcite-renderer"
 version.workspace=true
 edition.workspace=true
 license.workspace=true
+
+[dependencies]
+kalcite-platform-api = { path = "../kalcite-platform-api" }

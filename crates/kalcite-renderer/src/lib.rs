@@ -37,6 +37,34 @@ pub enum DrawCommand {
     SpriteRegion(SpriteRegion),
     Tilemap(Tilemap),
 }
+
+/// An immutable render submission prepared for one generation of a native GPU
+/// surface. Backends must check the target generation before presenting; this
+/// prevents a frame prepared before resize from reaching a replaced swapchain.
+#[derive(Debug, PartialEq, Eq)]
+pub struct RenderFrame {
+    target: GpuTarget,
+    camera: Camera,
+    commands: Vec<DrawCommand>,
+}
+
+impl RenderFrame {
+    pub fn target(&self) -> GpuTarget {
+        self.target
+    }
+
+    pub fn camera(&self) -> Camera {
+        self.camera
+    }
+
+    pub fn commands(&self) -> &[DrawCommand] {
+        &self.commands
+    }
+
+    pub fn draw_calls(&self) -> u32 {
+        self.commands.len() as u32
+    }
+}
 #[derive(Default)]
 pub struct Renderer {
     pub camera: Camera,
@@ -71,6 +99,21 @@ impl Renderer {
     }
     pub fn draw_calls(&self) -> u32 {
         self.queue.len() as u32
+    }
+
+    /// Sort and detach the current command queue for a GPU backend. The
+    /// renderer becomes ready to record the next frame immediately afterwards.
+    pub fn finish(&mut self, target: GpuTarget) -> RenderFrame {
+        self.queue.sort_by_key(|command| match command {
+            DrawCommand::Sprite(sprite) => sprite.layer,
+            DrawCommand::SpriteRegion(region) => region.layer,
+            DrawCommand::Tilemap(tilemap) => tilemap.layer,
+        });
+        RenderFrame {
+            target,
+            camera: self.camera,
+            commands: core::mem::take(&mut self.queue),
+        }
     }
 }
 #[cfg(test)]
@@ -124,4 +167,38 @@ mod tests {
             ]
         ));
     }
+
+    #[test]
+    fn render_frame_is_sorted_and_detaches_the_recording_queue() {
+        let mut renderer = Renderer::default();
+        renderer.push(Sprite {
+            asset: 2,
+            x: 0,
+            y: 0,
+            layer: 2,
+        });
+        renderer.push(Sprite {
+            asset: 1,
+            x: 0,
+            y: 0,
+            layer: 1,
+        });
+        let target = GpuTarget {
+            surface: kalcite_platform_api::SurfaceId::INVALID,
+            width: 320,
+            height: 240,
+            generation: 7,
+        };
+        let frame = renderer.finish(target);
+        assert_eq!(renderer.draw_calls(), 0);
+        assert_eq!(frame.target(), target);
+        assert!(matches!(
+            frame.commands(),
+            [
+                DrawCommand::Sprite(Sprite { asset: 1, .. }),
+                DrawCommand::Sprite(Sprite { asset: 2, .. })
+            ]
+        ));
+    }
 }
+use kalcite_platform_api::GpuTarget;

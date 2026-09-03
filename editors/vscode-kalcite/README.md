@@ -1,7 +1,16 @@
 # Kalcite for VS Code
 
-Support for `.klc`: syntax highlighting, brackets, comments, and tasks. Install
-the `kalcite` CLI on `PATH`, then run `kalcite lint`, `kalcite check`, or
-`kalcite build` from the integrated terminal.
+Support for `.klc`: syntax highlighting, brackets, snippets, tasks, and the
+Kalcite language server. Install `kalcite-lsp` on `PATH` (the Kallyup
+`developer` or `full` profile does this) and open a `.klc` file. Diagnostics,
+completion, hover, definitions, and document symbols are then provided by the
+server.
+
+Override `kalcite.languageServer.path` when the binary is not on `PATH`; use
+`kalcite.languageServer.args` to supply server arguments. The extension keeps
+the LSP output in the **Kalcite Language Server** output channel.
+
+The `kalcite` CLI remains available from the integrated terminal for explicit
+`lint`, `check`, `build`, `project-check`, and `project-build` commands.
 
 To package the extension: `npx @vscode/vsce package`.

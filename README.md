@@ -33,8 +33,8 @@ crates/kalcite-platform-api        Platform contracts
 crates/kalcite-platform-headless   Test backend
 crates/kalcite-platform-numworks   NumWorks ABI and backend
 editors/vscode-kalcite             VS Code extension
-editors/zed-kalcite                Zed extension
-editors/tree-sitter-kalcite        Shared grammar for Zed
+editors/zed-kalcite                Historical Zed manifest (full client: github.com/Kalcite-Engine/zed-kalcite)
+editors/tree-sitter-kalcite        Historical grammar source (published: github.com/Kalcite-Engine/tree-sitter-kalcite)
 examples/pong                      Example game
 ```
 
@@ -48,6 +48,8 @@ sites are the repository's only submodules; see [`REPOSITORIES.md`](REPOSITORIES
   Language Server Protocol implementation that consumes a versioned Kalcite core.
 - [Kalcite Editor](https://github.com/Kalcite-Engine/kalcite-editor) is the
   independent native graphical editor for Kalcite projects.
+- [Kallyup](https://github.com/Kalcite-Engine/kallyup) installs the Kalcite
+  toolchain through `minimal`, `developer`, and `full` profiles.
 
 ## Usage
 

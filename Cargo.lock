@@ -124,6 +124,7 @@ dependencies = [
  "kalcite-object",
  "kalcite-stdlib",
  "kalcite-syntax",
+ "kalcite-typecheck",
 ]
 
 [[package]]
@@ -184,6 +185,7 @@ name = "kalcite-platform-headless"
 version = "0.2.0"
 dependencies = [
  "kalcite-platform-api",
+ "kalcite-renderer",
 ]
 
 [[package]]
@@ -218,6 +220,9 @@ dependencies = [
 [[package]]
 name = "kalcite-renderer"
 version = "0.14.0"
+dependencies = [
+ "kalcite-platform-api",
+]
 
 [[package]]
 name = "kalcite-runtime-core"
@@ -246,6 +251,10 @@ version = "0.14.0"
 [[package]]
 name = "kalcite-typecheck"
 version = "0.14.0"
+dependencies = [
+ "kalcite-hir",
+ "kalcite-syntax",
+]
 
 [[package]]
 name = "miniz_oxide"

@@ -3,3 +3,7 @@ name="kalcite-typecheck"
 version.workspace=true
 edition.workspace=true
 license.workspace=true
+
+[dependencies]
+kalcite-hir = { path = "../kalcite-hir" }
+kalcite-syntax = { path = "../kalcite-syntax" }

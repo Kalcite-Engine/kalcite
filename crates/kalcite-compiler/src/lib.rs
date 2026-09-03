@@ -13,6 +13,7 @@ pub fn check(source: &str) -> Result<(Module, Report), kalcite_syntax::Diagnosti
     let expanded = expand_stdlib_source(source)?;
     let module = parse(&expanded)?;
     let hir = kalcite_hir::lower(&module)?;
+    kalcite_typecheck::check(&hir)?;
     let mir = kalcite_mir::lower(&hir);
     let structs = module
         .items
@@ -41,6 +42,7 @@ pub fn lower(source: &str) -> Result<kalcite_mir::Program, kalcite_syntax::Diagn
     let expanded = expand_stdlib_source(source)?;
     let ast = parse(&expanded)?;
     let hir = kalcite_hir::lower(&ast)?;
+    kalcite_typecheck::check(&hir)?;
     Ok(kalcite_mir::lower(&hir))
 }
 
@@ -271,6 +273,11 @@ mod stdlib_tests {
         let rust = emit_rust(src).expect("KLC stdlib should lower");
         assert_eq!(rust.matches("pub fn step_towards").count(), 1);
         assert!(rust.contains("step_towards(self.x, 10, 1)"));
+    }
+
+    #[test]
+    fn rejects_invalid_initializer_before_codegen() {
+        assert!(check("public class Main { u8 value = true; }").is_err());
     }
 
     #[test]

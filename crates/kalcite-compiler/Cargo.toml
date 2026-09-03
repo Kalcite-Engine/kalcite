@@ -9,6 +9,7 @@ rust-version.workspace = true
 kalcite-syntax = { path = "../kalcite-syntax" }
 kalcite-object = { path = "../kalcite-object" }
 kalcite-hir = { path = "../kalcite-hir" }
+kalcite-typecheck = { path = "../kalcite-typecheck" }
 kalcite-mir = { path = "../kalcite-mir" }
 kalcite-backend-rust = { path = "../kalcite-backend-rust" }
 kalcite-backend-numworks = { path = "../kalcite-backend-numworks" }
