@@ -48,6 +48,8 @@ sites are the repository's only submodules; see [`REPOSITORIES.md`](REPOSITORIES
   Language Server Protocol implementation that consumes a versioned Kalcite core.
 - [Kalcite Editor](https://github.com/Kalcite-Engine/kalcite-editor) is the
   independent native graphical editor for Kalcite projects.
+- [Kallyup](https://github.com/Kalcite-Engine/kallyup) installs the Kalcite
+  toolchain through `minimal`, `developer`, and `full` profiles.
 
 ## Usage
 
