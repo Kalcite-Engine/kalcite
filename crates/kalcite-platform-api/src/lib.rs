@@ -129,6 +129,34 @@ pub struct RoutedPointerEvent {
     pub button: u8,
 }
 
+/// The phase of a keyboard event after a platform adapter has normalized it.
+/// `Repeat` represents a host repeat event; adapters never need to expose
+/// their native event object to the game runtime.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeyPhase {
+    Press,
+    Release,
+    Repeat,
+}
+
+/// A toolkit-neutral physical/logical key identifier chosen by an adapter.
+/// The value is intentionally opaque to the surface ABI: platform adapters
+/// can map it to the portable game input layer without linking each other.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativeKeyCode(pub u16);
+
+/// A keyboard event routed to a focused embedded game view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RoutedKeyEvent {
+    pub surface: SurfaceId,
+    pub phase: KeyPhase,
+    pub key: NativeKeyCode,
+    /// Toolkit-normalized modifier bits owned by the adapter.
+    pub modifiers: u16,
+}
+
 /// A generation-tagged GPU presentation target. Renderers can cache this
 /// value for one frame; adapters reject it after a resize or surface destroy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -352,6 +380,34 @@ impl<const N: usize> SurfaceRegistry<N> {
         }))
     }
 
+    /// Route a keyboard event to a focused directly embedded game view.
+    /// Focus remains native-toolkit policy: the adapter supplies the intended
+    /// child, while the registry guarantees that it belongs to `parent` and
+    /// is still an active embedded game surface.
+    pub fn route_key(
+        &self,
+        parent: SurfaceId,
+        child: SurfaceId,
+        phase: KeyPhase,
+        key: NativeKeyCode,
+        modifiers: u16,
+    ) -> Result<RoutedKeyEvent, SurfaceError> {
+        let parent_slot = self.slot(parent)?;
+        if parent_slot.descriptor.role != SurfaceRole::Application {
+            return Err(SurfaceError::InvalidEmbedding);
+        }
+        let child_slot = self.slot(child)?;
+        if child_slot.descriptor.role != SurfaceRole::EmbeddedGame || child_slot.parent != parent {
+            return Err(SurfaceError::InvalidEmbedding);
+        }
+        Ok(RoutedKeyEvent {
+            surface: child,
+            phase,
+            key,
+            modifiers,
+        })
+    }
+
     fn slot(&self, id: SurfaceId) -> Result<&SurfaceSlot, SurfaceError> {
         let Some(slot) = self.slots.get(id.slot as usize) else {
             return Err(SurfaceError::StaleHandle);
@@ -539,6 +595,40 @@ mod surface_tests {
         assert_eq!(
             surfaces.route_pointer(app, PointerPhase::Move, 700, 250, 0),
             Ok(None)
+        );
+    }
+
+    #[test]
+    fn keyboard_routing_requires_a_directly_embedded_game() {
+        let mut surfaces = SurfaceRegistry::<3>::default();
+        let app = surfaces.create(APP).unwrap();
+        let game = surfaces.create(GAME).unwrap();
+        let standalone = surfaces.create(GAME).unwrap();
+        surfaces
+            .embed(
+                app,
+                game,
+                EmbeddedView {
+                    x: 0,
+                    y: 0,
+                    width: 320,
+                    height: 240,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            surfaces.route_key(app, game, KeyPhase::Press, NativeKeyCode(42), 3),
+            Ok(RoutedKeyEvent {
+                surface: game,
+                phase: KeyPhase::Press,
+                key: NativeKeyCode(42),
+                modifiers: 3,
+            })
+        );
+        assert_eq!(
+            surfaces.route_key(app, standalone, KeyPhase::Release, NativeKeyCode(42), 0),
+            Err(SurfaceError::InvalidEmbedding)
         );
     }
 }
