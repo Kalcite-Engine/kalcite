@@ -106,6 +106,7 @@ pub enum Stmt {
     /// Deferred expressions run in last-in, first-out order.
     Defer(Expr),
     Break,
+    Continue,
     Return(Option<Expr>),
     Local {
         name: String,
@@ -302,10 +303,10 @@ pub fn parse_type(text: &str) -> Type {
             .unwrap_or(Type::Named(t.into())),
         _ if t.starts_with('[') && t.ends_with(']') => {
             let inner = &t[1..t.len() - 1];
-            if let Some((ty, n)) = inner.rsplit_once(';') {
-                if let Ok(n) = n.trim().parse() {
-                    return Type::FixedArray(Box::new(parse_type(ty)), n);
-                }
+            if let Some((ty, n)) = inner.rsplit_once(';')
+                && let Ok(n) = n.trim().parse()
+            {
+                return Type::FixedArray(Box::new(parse_type(ty)), n);
             }
             Type::Named(t.into())
         }
@@ -314,10 +315,10 @@ pub fn parse_type(text: &str) -> Type {
         }
         _ if t.starts_with("Pool[") && t.ends_with(']') => {
             let inner = &t[5..t.len() - 1];
-            if let Some((ty, n)) = inner.rsplit_once(';') {
-                if let Ok(n) = n.trim().parse() {
-                    return Type::Pool(Box::new(parse_type(ty)), n);
-                }
+            if let Some((ty, n)) = inner.rsplit_once(';')
+                && let Ok(n) = n.trim().parse()
+            {
+                return Type::Pool(Box::new(parse_type(ty)), n);
             }
             Type::Named(t.into())
         }
@@ -386,13 +387,13 @@ impl<'a> BodyParser<'a> {
                 if language == NativeLanguage::Asm && target.is_none() {
                     return self.err("unsafe asm requires an explicit target, for example unsafe asm[numworks] { ... }");
                 }
-                if let Some(t) = target.as_deref() {
-                    if !matches!(
+                if let Some(t) = target.as_deref()
+                    && !matches!(
                         t,
                         "numworks" | "desktop" | "linux" | "windows" | "macos" | "web" | "wasm"
-                    ) {
-                        return self.err("unknown native target; expected numworks, desktop, linux, windows, macos, web, or wasm");
-                    }
+                    )
+                {
+                    return self.err("unknown native target; expected numworks, desktop, linux, windows, macos, web, or wasm");
                 }
                 Ok(Stmt::Native {
                     language,
@@ -438,6 +439,11 @@ impl<'a> BodyParser<'a> {
                 self.bump();
                 self.expect(TokenKind::Semicolon)?;
                 Ok(Stmt::Break)
+            }
+            TokenKind::Continue => {
+                self.bump();
+                self.expect(TokenKind::Semicolon)?;
+                Ok(Stmt::Continue)
             }
             TokenKind::Return => {
                 self.bump();
@@ -506,10 +512,8 @@ impl<'a> BodyParser<'a> {
         // `const u32 score = 0;` is accepted in addition to the legacy
         // `const score: u32 = 0;`. `var` intentionally keeps its inference-first
         // spelling; explicit C#-style locals do not need a `var` keyword.
-        if !mutable {
-            if let Some(local) = self.try_typed_local(false)? {
-                return Ok(local);
-            }
+        if !mutable && let Some(local) = self.try_typed_local(false)? {
+            return Ok(local);
         }
 
         let name = self.ident()?;
@@ -633,10 +637,7 @@ impl<'a> BodyParser<'a> {
     }
     fn expr(&mut self, min_prec: u8) -> Result<Expr, Diagnostic> {
         let mut left = self.prefix()?;
-        loop {
-            let Some((prec, op)) = binop(self.peek()) else {
-                break;
-            };
+        while let Some((prec, op)) = binop(self.peek()) {
             if prec < min_prec {
                 break;
             }
@@ -833,6 +834,15 @@ mod tests {
         assert!(matches!(
             &body[0],
             Stmt::While { body, .. } if matches!(body.first(), Some(Stmt::Break))
+        ));
+    }
+
+    #[test]
+    fn parses_continue_statement() {
+        let body = parse_body("while true { continue; }").unwrap();
+        assert!(matches!(
+            &body[0],
+            Stmt::While { body, .. } if matches!(body.first(), Some(Stmt::Continue))
         ));
     }
 }

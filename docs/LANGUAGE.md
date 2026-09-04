@@ -95,11 +95,13 @@ public i16 Clamp(i16 value, i16 maximum) {
 }
 ```
 
-Function bodies support calls, member access, array expressions, local declarations, assignments (including compound assignments), unary and binary operators, `if`/`else`, `while`, `break`, `defer`, and `return`. Conditions may be written with or without parentheses where the parser permits it.
+Function bodies support calls, member access, array expressions, local declarations, assignments (including compound assignments), unary and binary operators, `if`/`else`, `while`, `break`, `continue`, `defer`, and `return`. Conditions may be written with or without parentheses where the parser permits it.
 
 `defer expression;` runs the expression when the current lexical scope is left. Deferred expressions execute in last-in, first-out order and also run before a `return`; they do not allocate a closure or require a garbage collector.
 
 `break;` is valid only inside a `while` body. It leaves the innermost loop after running the deferred expressions belonging to the loop body and any nested lexical block it leaves; defers registered outside that loop remain active until their own scope is left.
+
+`continue;` is also valid only inside a `while` body. It ends the current iteration after running the deferred expressions belonging to the loop body and any nested lexical block it leaves; defers registered outside the loop remain active.
 
 ```klc
 public void WriteConfig() {
