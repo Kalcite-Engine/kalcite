@@ -53,6 +53,13 @@ while a platform adapter compiles or presents the previous one. A future Metal,
 Vulkan, Direct3D, OpenGL, or Skia adapter consumes this common command frame;
 no renderer code needs to borrow a SwiftUI, GTK, Qt, WinUI, or Kotlin object.
 
+`RenderFrameEncoder` makes that hand-off explicit. A backend implements
+`begin_frame(target, camera)`, `draw_command(command)`, and `end_frame()` to
+translate the immutable, layer-sorted commands into its own command buffer.
+The adapter validates `GpuTarget` immediately before this replay, then owns
+the device submission and presentation lifetime. This keeps the common
+renderer API portable while allowing each backend to use its native fast path.
+
 `kalcite-platform-headless::NativeSurfaceHost` is the executable reference for
 that presentation boundary. It owns a `SurfaceRegistry`, consumes a
 `RenderFrame` only after checking its target generation, and records the
