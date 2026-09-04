@@ -97,6 +97,36 @@ impl EmbeddedView {
         let top = self.y as i32;
         x >= left && y >= top && x - left < self.width as i32 && y - top < self.height as i32
     }
+
+    /// Convert a hit-tested parent-coordinate point to logical game pixels.
+    /// Multiplication is widened so a large native view cannot overflow before
+    /// it is scaled down to the game's bounded target dimensions.
+    pub const fn map_point(self, x: i32, y: i32, width: u16, height: u16) -> (u16, u16) {
+        let local_x = (x - self.x as i32) as i64;
+        let local_y = (y - self.y as i32) as i64;
+        let mapped_x = local_x * width as i64 / self.width as i64;
+        let mapped_y = local_y * height as i64 / self.height as i64;
+        (mapped_x as u16, mapped_y as u16)
+    }
+}
+
+/// The phase of a pointer event after a platform adapter has normalized it.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointerPhase {
+    Move,
+    Press,
+    Release,
+}
+
+/// A pointer event routed into an embedded game's logical pixel space.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RoutedPointerEvent {
+    pub surface: SurfaceId,
+    pub phase: PointerPhase,
+    pub x: u16,
+    pub y: u16,
+    pub button: u8,
 }
 
 /// A generation-tagged GPU presentation target. Renderers can cache this
@@ -295,6 +325,33 @@ impl<const N: usize> SurfaceRegistry<N> {
         Ok(None)
     }
 
+    /// Hit-test and normalize a parent-coordinate pointer event for an
+    /// embedded game. A miss returns `Ok(None)`; native adapters can continue
+    /// handling that event as application UI input.
+    pub fn route_pointer(
+        &self,
+        parent: SurfaceId,
+        phase: PointerPhase,
+        x: i32,
+        y: i32,
+        button: u8,
+    ) -> Result<Option<RoutedPointerEvent>, SurfaceError> {
+        let Some(surface) = self.embedded_at(parent, x, y)? else {
+            return Ok(None);
+        };
+        let slot = self.slot(surface)?;
+        let (x, y) = slot
+            .view
+            .map_point(x, y, slot.descriptor.width, slot.descriptor.height);
+        Ok(Some(RoutedPointerEvent {
+            surface,
+            phase,
+            x,
+            y,
+            button,
+        }))
+    }
+
     fn slot(&self, id: SurfaceId) -> Result<&SurfaceSlot, SurfaceError> {
         let Some(slot) = self.slots.get(id.slot as usize) else {
             return Err(SurfaceError::StaleHandle);
@@ -449,5 +506,39 @@ mod surface_tests {
         assert_eq!(surfaces.embedded_at(app, -1, 20), Ok(Some(first)));
         assert_eq!(surfaces.embedded_at(app, 20, 20), Ok(Some(second)));
         assert_eq!(surfaces.embedded_at(app, 100, 20), Ok(None));
+    }
+
+    #[test]
+    fn pointer_routing_scales_parent_coordinates_for_the_embedded_game() {
+        let mut surfaces = SurfaceRegistry::<2>::default();
+        let app = surfaces.create(APP).unwrap();
+        let game = surfaces.create(GAME).unwrap();
+        surfaces
+            .embed(
+                app,
+                game,
+                EmbeddedView {
+                    x: -20,
+                    y: 10,
+                    width: 640,
+                    height: 480,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            surfaces.route_pointer(app, PointerPhase::Press, 300, 250, 1),
+            Ok(Some(RoutedPointerEvent {
+                surface: game,
+                phase: PointerPhase::Press,
+                x: 160,
+                y: 120,
+                button: 1,
+            }))
+        );
+        assert_eq!(
+            surfaces.route_pointer(app, PointerPhase::Move, 700, 250, 0),
+            Ok(None)
+        );
     }
 }
