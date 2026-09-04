@@ -105,6 +105,7 @@ pub enum Stmt {
     /// Evaluate this expression when its enclosing lexical scope is left.
     /// Deferred expressions run in last-in, first-out order.
     Defer(Expr),
+    Break,
     Return(Option<Expr>),
     Local {
         name: String,
@@ -432,6 +433,11 @@ impl<'a> BodyParser<'a> {
                 let expression = self.expr(0)?;
                 self.expect(TokenKind::Semicolon)?;
                 Ok(Stmt::Defer(expression))
+            }
+            TokenKind::Break => {
+                self.bump();
+                self.expect(TokenKind::Semicolon)?;
+                Ok(Stmt::Break)
             }
             TokenKind::Return => {
                 self.bump();
@@ -819,6 +825,15 @@ mod tests {
     fn parses_defer_statement() {
         let body = parse_body("defer cleanup(); return;").unwrap();
         assert!(matches!(body[0], Stmt::Defer(Expr::Call { .. })));
+    }
+
+    #[test]
+    fn parses_break_statement() {
+        let body = parse_body("while true { break; }").unwrap();
+        assert!(matches!(
+            &body[0],
+            Stmt::While { body, .. } if matches!(body.first(), Some(Stmt::Break))
+        ));
     }
 }
 

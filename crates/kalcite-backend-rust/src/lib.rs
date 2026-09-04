@@ -78,7 +78,7 @@ fn emit_free_function(out: &mut String, program: &Program, function: &kalcite_hi
         format!(" -> {}", ty(program, &function.ret))
     };
     out.push_str(&format!("){ret} {{\n"));
-    emit_body_free(out, program, &function.body, &mut scope, 1, &[]);
+    emit_body_free(out, program, &function.body, &mut scope, 1, &[], None);
     out.push_str("}\n\n");
 }
 
@@ -89,6 +89,7 @@ fn emit_body_free<'a>(
     scope: &mut HashSet<String>,
     depth: usize,
     inherited_defers: &[&'a Expr],
+    loop_cleanup_start: Option<usize>,
 ) {
     let mut local_defers = Vec::new();
     for statement in body {
@@ -98,9 +99,17 @@ fn emit_body_free<'a>(
         }
         let mut active_defers = inherited_defers.to_vec();
         active_defers.extend(local_defers.iter().copied());
-        stmt_free(out, program, statement, scope, depth, &active_defers);
+        stmt_free(
+            out,
+            program,
+            statement,
+            scope,
+            depth,
+            &active_defers,
+            loop_cleanup_start,
+        );
     }
-    if !matches!(body.last(), Some(Stmt::Return(_))) {
+    if !matches!(body.last(), Some(Stmt::Return(_) | Stmt::Break)) {
         emit_deferred_free(out, program, &local_defers, scope, depth);
     }
 }
@@ -128,6 +137,7 @@ fn stmt_free(
     scope: &mut HashSet<String>,
     depth: usize,
     active_defers: &[&Expr],
+    loop_cleanup_start: Option<usize>,
 ) {
     let indent = "    ".repeat(depth);
     match statement {
@@ -156,12 +166,28 @@ fn stmt_free(
                 expr_free(program, condition, scope)
             ));
             let mut sc = scope.clone();
-            emit_body_free(out, program, then_body, &mut sc, depth + 1, active_defers);
+            emit_body_free(
+                out,
+                program,
+                then_body,
+                &mut sc,
+                depth + 1,
+                active_defers,
+                loop_cleanup_start,
+            );
             out.push_str(&format!("{indent}}}"));
             if !else_body.is_empty() {
                 out.push_str(" else {\n");
                 let mut sc = scope.clone();
-                emit_body_free(out, program, else_body, &mut sc, depth + 1, active_defers);
+                emit_body_free(
+                    out,
+                    program,
+                    else_body,
+                    &mut sc,
+                    depth + 1,
+                    active_defers,
+                    loop_cleanup_start,
+                );
                 out.push_str(&format!("{indent}}}"));
             }
             out.push('\n');
@@ -172,10 +198,23 @@ fn stmt_free(
                 expr_free(program, condition, scope)
             ));
             let mut sc = scope.clone();
-            emit_body_free(out, program, body, &mut sc, depth + 1, active_defers);
+            emit_body_free(
+                out,
+                program,
+                body,
+                &mut sc,
+                depth + 1,
+                active_defers,
+                Some(active_defers.len()),
+            );
             out.push_str(&format!("{indent}}}\n"));
         }
         Stmt::Defer(_) => unreachable!("defer statements are handled by emit_body_free"),
+        Stmt::Break => {
+            let start = loop_cleanup_start.expect("break must be typechecked inside a loop");
+            emit_deferred_free(out, program, &active_defers[start..], scope, depth);
+            out.push_str(&format!("{indent}break;\n"));
+        }
         Stmt::Return(v) => {
             if let Some(value) = v {
                 if active_defers.is_empty() {
@@ -489,7 +528,16 @@ fn emit_class(out: &mut String, program: &Program, class: &Class) {
             format!(" -> {}", ty(program, &function.ret))
         };
         out.push_str(&format!("){ret} {{\n"));
-        emit_body(out, program, class, &function.body, &mut scope, 2, &[]);
+        emit_body(
+            out,
+            program,
+            class,
+            &function.body,
+            &mut scope,
+            2,
+            &[],
+            None,
+        );
         out.push_str("    }\n");
     }
     out.push_str("}\n\n");
@@ -572,6 +620,7 @@ fn emit_body<'a>(
     scope: &mut HashSet<String>,
     depth: usize,
     inherited_defers: &[&'a Expr],
+    loop_cleanup_start: Option<usize>,
 ) {
     let mut local_defers = Vec::new();
     for statement in body {
@@ -581,9 +630,18 @@ fn emit_body<'a>(
         }
         let mut active_defers = inherited_defers.to_vec();
         active_defers.extend(local_defers.iter().copied());
-        stmt(out, program, class, statement, scope, depth, &active_defers);
+        stmt(
+            out,
+            program,
+            class,
+            statement,
+            scope,
+            depth,
+            &active_defers,
+            loop_cleanup_start,
+        );
     }
-    if !matches!(body.last(), Some(Stmt::Return(_))) {
+    if !matches!(body.last(), Some(Stmt::Return(_) | Stmt::Break)) {
         emit_deferred(out, program, class, &local_defers, scope, depth);
     }
 }
@@ -613,6 +671,7 @@ fn stmt(
     scope: &mut HashSet<String>,
     depth: usize,
     active_defers: &[&Expr],
+    loop_cleanup_start: Option<usize>,
 ) {
     let indent = "    ".repeat(depth);
     match statement {
@@ -674,6 +733,7 @@ fn stmt(
                 &mut then_scope,
                 depth + 1,
                 active_defers,
+                loop_cleanup_start,
             );
             out.push_str(&format!("{indent}}}"));
             if !else_body.is_empty() {
@@ -687,6 +747,7 @@ fn stmt(
                     &mut else_scope,
                     depth + 1,
                     active_defers,
+                    loop_cleanup_start,
                 );
                 out.push_str(&format!("{indent}}}"));
             }
@@ -706,10 +767,16 @@ fn stmt(
                 &mut body_scope,
                 depth + 1,
                 active_defers,
+                Some(active_defers.len()),
             );
             out.push_str(&format!("{indent}}}\n"));
         }
         Stmt::Defer(_) => unreachable!("defer statements are handled by emit_body"),
+        Stmt::Break => {
+            let start = loop_cleanup_start.expect("break must be typechecked inside a loop");
+            emit_deferred(out, program, class, &active_defers[start..], scope, depth);
+            out.push_str(&format!("{indent}break;\n"));
+        }
         Stmt::Return(value) => {
             if let Some(value) = value {
                 if active_defers.is_empty() {
@@ -1034,6 +1101,20 @@ mod tests {
         let outer = output.find("outer();").unwrap();
         let ret = output.find("return;").unwrap();
         assert!(inner < outer && outer < ret);
+    }
+
+    #[test]
+    fn break_runs_only_the_defers_for_scopes_it_exits() {
+        let output = emitted(
+            "@scene class G extends Game { fn update() -> void { defer outer(); while true { defer loop_cleanup(); if true { defer branch_cleanup(); break; } } } }",
+        );
+        let branch = output.find("branch_cleanup();").unwrap();
+        let loop_cleanup = output.find("loop_cleanup();").unwrap();
+        let break_statement = output.find("break;").unwrap();
+        let outer = output.find("outer();").unwrap();
+        assert!(branch < loop_cleanup && loop_cleanup < break_statement && break_statement < outer);
+        assert_eq!(output.matches("branch_cleanup();").count(), 1);
+        assert_eq!(output.matches("loop_cleanup();").count(), 2);
     }
 
     #[test]
