@@ -75,6 +75,11 @@ fn check_body(
             Stmt::Expr(expr) => {
                 expr_type(expr, symbols, Some(functions))?;
             }
+            Stmt::Defer(expr) => {
+                // A deferred expression has the same type rules as an ordinary
+                // expression statement; its value, if any, is discarded.
+                expr_type(expr, symbols, Some(functions))?;
+            }
             Stmt::Local {
                 name, ty, value, ..
             } => {

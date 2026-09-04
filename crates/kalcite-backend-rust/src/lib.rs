@@ -78,10 +78,47 @@ fn emit_free_function(out: &mut String, program: &Program, function: &kalcite_hi
         format!(" -> {}", ty(program, &function.ret))
     };
     out.push_str(&format!("){ret} {{\n"));
-    for statement in &function.body {
-        stmt_free(out, program, statement, &mut scope, 1);
-    }
+    emit_body_free(out, program, &function.body, &mut scope, 1, &[]);
     out.push_str("}\n\n");
+}
+
+fn emit_body_free<'a>(
+    out: &mut String,
+    program: &Program,
+    body: &'a [Stmt],
+    scope: &mut HashSet<String>,
+    depth: usize,
+    inherited_defers: &[&'a Expr],
+) {
+    let mut local_defers = Vec::new();
+    for statement in body {
+        if let Stmt::Defer(expression) = statement {
+            local_defers.push(expression);
+            continue;
+        }
+        let mut active_defers = inherited_defers.to_vec();
+        active_defers.extend(local_defers.iter().copied());
+        stmt_free(out, program, statement, scope, depth, &active_defers);
+    }
+    if !matches!(body.last(), Some(Stmt::Return(_))) {
+        emit_deferred_free(out, program, &local_defers, scope, depth);
+    }
+}
+
+fn emit_deferred_free(
+    out: &mut String,
+    program: &Program,
+    deferred: &[&Expr],
+    scope: &HashSet<String>,
+    depth: usize,
+) {
+    let indent = "    ".repeat(depth);
+    for expression in deferred.iter().rev() {
+        out.push_str(&format!(
+            "{indent}{};\n",
+            expr_free(program, expression, scope)
+        ));
+    }
 }
 
 fn stmt_free(
@@ -90,6 +127,7 @@ fn stmt_free(
     statement: &Stmt,
     scope: &mut HashSet<String>,
     depth: usize,
+    active_defers: &[&Expr],
 ) {
     let indent = "    ".repeat(depth);
     match statement {
@@ -118,16 +156,12 @@ fn stmt_free(
                 expr_free(program, condition, scope)
             ));
             let mut sc = scope.clone();
-            for x in then_body {
-                stmt_free(out, program, x, &mut sc, depth + 1);
-            }
+            emit_body_free(out, program, then_body, &mut sc, depth + 1, active_defers);
             out.push_str(&format!("{indent}}}"));
             if !else_body.is_empty() {
                 out.push_str(" else {\n");
                 let mut sc = scope.clone();
-                for x in else_body {
-                    stmt_free(out, program, x, &mut sc, depth + 1);
-                }
+                emit_body_free(out, program, else_body, &mut sc, depth + 1, active_defers);
                 out.push_str(&format!("{indent}}}"));
             }
             out.push('\n');
@@ -138,17 +172,24 @@ fn stmt_free(
                 expr_free(program, condition, scope)
             ));
             let mut sc = scope.clone();
-            for x in body {
-                stmt_free(out, program, x, &mut sc, depth + 1);
-            }
+            emit_body_free(out, program, body, &mut sc, depth + 1, active_defers);
             out.push_str(&format!("{indent}}}\n"));
         }
-        Stmt::Return(v) => out.push_str(&format!(
-            "{indent}return{};\n",
-            v.as_ref()
-                .map(|e| format!(" {}", expr_free(program, e, scope)))
-                .unwrap_or_default()
-        )),
+        Stmt::Defer(_) => unreachable!("defer statements are handled by emit_body_free"),
+        Stmt::Return(v) => {
+            if let Some(value) = v {
+                out.push_str(&format!("{indent}return {{\n"));
+                out.push_str(&format!(
+                    "{indent}    let __klc_return_value = {};\n",
+                    expr_free(program, value, scope)
+                ));
+                emit_deferred_free(out, program, active_defers, scope, depth + 1);
+                out.push_str(&format!("{indent}    __klc_return_value\n{indent}}};\n"));
+            } else {
+                emit_deferred_free(out, program, active_defers, scope, depth);
+                out.push_str(&format!("{indent}return;\n"));
+            }
+        }
         Stmt::Local {
             name,
             ty: explicit,
@@ -441,9 +482,7 @@ fn emit_class(out: &mut String, program: &Program, class: &Class) {
             format!(" -> {}", ty(program, &function.ret))
         };
         out.push_str(&format!("){ret} {{\n"));
-        for statement in &function.body {
-            stmt(out, program, class, statement, &mut scope, 2);
-        }
+        emit_body(out, program, class, &function.body, &mut scope, 2, &[]);
         out.push_str("    }\n");
     }
     out.push_str("}\n\n");
@@ -518,6 +557,47 @@ fn signal_payload(program: &Program, signal: &kalcite_hir::Signal) -> String {
     }
 }
 
+fn emit_body<'a>(
+    out: &mut String,
+    program: &Program,
+    class: &Class,
+    body: &'a [Stmt],
+    scope: &mut HashSet<String>,
+    depth: usize,
+    inherited_defers: &[&'a Expr],
+) {
+    let mut local_defers = Vec::new();
+    for statement in body {
+        if let Stmt::Defer(expression) = statement {
+            local_defers.push(expression);
+            continue;
+        }
+        let mut active_defers = inherited_defers.to_vec();
+        active_defers.extend(local_defers.iter().copied());
+        stmt(out, program, class, statement, scope, depth, &active_defers);
+    }
+    if !matches!(body.last(), Some(Stmt::Return(_))) {
+        emit_deferred(out, program, class, &local_defers, scope, depth);
+    }
+}
+
+fn emit_deferred(
+    out: &mut String,
+    program: &Program,
+    class: &Class,
+    deferred: &[&Expr],
+    scope: &HashSet<String>,
+    depth: usize,
+) {
+    let indent = "    ".repeat(depth);
+    for expression in deferred.iter().rev() {
+        out.push_str(&format!(
+            "{indent}{};\n",
+            expr(program, class, expression, scope)
+        ));
+    }
+}
+
 fn stmt(
     out: &mut String,
     program: &Program,
@@ -525,6 +605,7 @@ fn stmt(
     statement: &Stmt,
     scope: &mut HashSet<String>,
     depth: usize,
+    active_defers: &[&Expr],
 ) {
     let indent = "    ".repeat(depth);
     match statement {
@@ -578,16 +659,28 @@ fn stmt(
                 expr(program, class, condition, scope)
             ));
             let mut then_scope = scope.clone();
-            for s in then_body {
-                stmt(out, program, class, s, &mut then_scope, depth + 1);
-            }
+            emit_body(
+                out,
+                program,
+                class,
+                then_body,
+                &mut then_scope,
+                depth + 1,
+                active_defers,
+            );
             out.push_str(&format!("{indent}}}"));
             if !else_body.is_empty() {
                 out.push_str(" else {\n");
                 let mut else_scope = scope.clone();
-                for s in else_body {
-                    stmt(out, program, class, s, &mut else_scope, depth + 1);
-                }
+                emit_body(
+                    out,
+                    program,
+                    class,
+                    else_body,
+                    &mut else_scope,
+                    depth + 1,
+                    active_defers,
+                );
                 out.push_str(&format!("{indent}}}"));
             }
             out.push('\n');
@@ -598,18 +691,32 @@ fn stmt(
                 expr(program, class, condition, scope)
             ));
             let mut body_scope = scope.clone();
-            for s in body {
-                stmt(out, program, class, s, &mut body_scope, depth + 1);
-            }
+            emit_body(
+                out,
+                program,
+                class,
+                body,
+                &mut body_scope,
+                depth + 1,
+                active_defers,
+            );
             out.push_str(&format!("{indent}}}\n"));
         }
-        Stmt::Return(value) => out.push_str(&format!(
-            "{indent}return{};\n",
-            value
-                .as_ref()
-                .map(|e| format!(" {}", expr(program, class, e, scope)))
-                .unwrap_or_default()
-        )),
+        Stmt::Defer(_) => unreachable!("defer statements are handled by emit_body"),
+        Stmt::Return(value) => {
+            if let Some(value) = value {
+                out.push_str(&format!("{indent}return {{\n"));
+                out.push_str(&format!(
+                    "{indent}    let __klc_return_value = {};\n",
+                    expr(program, class, value, scope)
+                ));
+                emit_deferred(out, program, class, active_defers, scope, depth + 1);
+                out.push_str(&format!("{indent}    __klc_return_value\n{indent}}};\n"));
+            } else {
+                emit_deferred(out, program, class, active_defers, scope, depth);
+                out.push_str(&format!("{indent}return;\n"));
+            }
+        }
         Stmt::Local {
             name,
             ty: explicit_ty,
@@ -889,6 +996,40 @@ mod tests {
         assert!(r.contains("let mut x: i16 = 1;"));
         assert!(r.contains("x += 2;"));
         assert!(!r.contains("self.x += 2"));
+    }
+
+    #[test]
+    fn emits_defer_in_lifo_order_before_return() {
+        let output = emitted(
+            "@scene class G extends Game { fn update() -> void { defer first(); defer second(); return; } }",
+        );
+        let second = output.find("second();").unwrap();
+        let first = output.find("first();").unwrap();
+        let ret = output.find("return;").unwrap();
+        assert!(second < first && first < ret);
+        assert_eq!(output.matches("first();").count(), 1);
+        assert_eq!(output.matches("second();").count(), 1);
+    }
+
+    #[test]
+    fn emits_nested_defer_before_inherited_cleanup() {
+        let output = emitted(
+            "@scene class G extends Game { fn update() -> void { defer outer(); if true { defer inner(); return; } } }",
+        );
+        let inner = output.find("inner();").unwrap();
+        let outer = output.find("outer();").unwrap();
+        let ret = output.find("return;").unwrap();
+        assert!(inner < outer && outer < ret);
+    }
+
+    #[test]
+    fn evaluates_return_value_before_deferred_cleanup() {
+        let output = emitted(
+            "@scene class G extends Game { fn value() -> i16 { defer cleanup(); return source(); } }",
+        );
+        let value = output.find("let __klc_return_value = source();").unwrap();
+        let cleanup = output.find("cleanup();").unwrap();
+        assert!(value < cleanup);
     }
     #[test]
     fn resolves_nested_class_constructor() {
