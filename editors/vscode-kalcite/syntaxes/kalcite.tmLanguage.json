@@ -74,7 +74,7 @@
     "keywords": {
       "patterns": [
         {
-          "match": "\\b(class|struct|interface|enum|extends|implements|fn|var|const|defer|return|if|else|while|for|in|match|spawn|destroy|signal|state|enter|update|goto|use|module|as|dyn|unsafe|rust|asm|true|false)\\b",
+          "match": "\\b(class|struct|interface|enum|extends|implements|fn|var|const|defer|return|break|if|else|while|for|in|match|spawn|destroy|signal|state|enter|update|goto|use|module|as|dyn|unsafe|rust|asm|true|false)\\b",
           "name": "keyword.control.kalcite"
         }
       ]

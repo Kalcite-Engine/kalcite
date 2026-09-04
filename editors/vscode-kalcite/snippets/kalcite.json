@@ -81,6 +81,13 @@
     ],
     "description": "Run an expression in LIFO order when the current scope ends"
   },
+  "Kalcite loop break": {
+    "prefix": "kl-break",
+    "body": [
+      "break;"
+    ],
+    "description": "Leave the innermost while loop after its local cleanup"
+  },
   "Native Rust block": {
     "prefix": "kl-rust",
     "body": [
