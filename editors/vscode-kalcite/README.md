@@ -6,9 +6,9 @@ Kalcite language server. Install `kalcite-lsp` on `PATH` (the Kallyup
 completion, hover, definitions, and document symbols are then provided by the
 server.
 
-The grammar recognizes deterministic `defer` cleanup statements and `break`
-inside `while` loops. `kl-defer` inserts a scope-exit cleanup expression, and
-`kl-break` inserts a loop exit.
+The grammar recognizes deterministic `defer` cleanup statements, `break`, and
+`continue` inside `while` loops. `kl-defer` inserts a scope-exit cleanup
+expression, while `kl-break` and `kl-continue` insert loop control flow.
 
 Override `kalcite.languageServer.path` when the binary is not on `PATH`; use
 `kalcite.languageServer.args` to supply server arguments. The extension keeps
