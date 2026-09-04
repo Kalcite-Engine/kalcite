@@ -28,6 +28,13 @@ preserving the pointer phase and button. A miss stays available to the native
 application UI, so game input and SwiftUI/GTK/Qt/WinUI/Kotlin controls can
 share one window without competing for raw events.
 
+Keyboard focus remains a native-toolkit decision. Once an adapter has selected
+a focused embedded game view, `route_key(parent, child, phase, key, modifiers)`
+validates that the child is directly embedded by the application and yields a
+toolkit-neutral `RoutedKeyEvent`. `NativeKeyCode` and modifier bits are opaque
+adapter values; SwiftUI, GTK, Qt, WinUI, and Kotlin adapters can map their own
+events to Kalcite input without sharing platform event types.
+
 ```rust
 let app = surfaces.create(application)?;
 let game = surfaces.create(embedded_game)?;
