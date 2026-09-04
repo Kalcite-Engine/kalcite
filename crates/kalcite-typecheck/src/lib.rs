@@ -150,6 +150,10 @@ fn check_body(
                 return Err(error("`break` is only valid inside a while loop"));
             }
             Stmt::Break => {}
+            Stmt::Continue if loop_depth == 0 => {
+                return Err(error("`continue` is only valid inside a while loop"));
+            }
+            Stmt::Continue => {}
             Stmt::Return(value) => match value {
                 Some(value) => expect(
                     return_type,
@@ -200,28 +204,26 @@ fn expr_type(
             Ok(Type::FixedArray(Box::new(item), values.len()))
         }
         Expr::Call { callee, args } => {
-            if let Expr::Path(path) = callee.as_ref() {
-                if path.len() == 1 {
-                    if let Some(function) = functions.and_then(|functions| functions.get(&path[0]))
-                    {
-                        if args.len() != function.params.len() {
-                            return Err(error(&format!(
-                                "`{}` expects {} arguments, got {}",
-                                path[0],
-                                function.params.len(),
-                                args.len()
-                            )));
-                        }
-                        for (argument, parameter) in args.iter().zip(&function.params) {
-                            expect(
-                                &parameter.ty,
-                                expr_type(argument, symbols, functions)?,
-                                "function argument",
-                            )?;
-                        }
-                        return Ok(function.ret.clone());
-                    }
+            if let Expr::Path(path) = callee.as_ref()
+                && path.len() == 1
+                && let Some(function) = functions.and_then(|functions| functions.get(&path[0]))
+            {
+                if args.len() != function.params.len() {
+                    return Err(error(&format!(
+                        "`{}` expects {} arguments, got {}",
+                        path[0],
+                        function.params.len(),
+                        args.len()
+                    )));
                 }
+                for (argument, parameter) in args.iter().zip(&function.params) {
+                    expect(
+                        &parameter.ty,
+                        expr_type(argument, symbols, functions)?,
+                        "function argument",
+                    )?;
+                }
+                return Ok(function.ret.clone());
             }
             for argument in args {
                 expr_type(argument, symbols, functions)?;
@@ -333,6 +335,23 @@ mod tests {
     fn accepts_break_inside_a_while_loop() {
         let program =
             lower(&parse("fn update() -> void { while true { break; } }").unwrap()).unwrap();
+        check(&program).unwrap();
+    }
+
+    #[test]
+    fn rejects_continue_outside_a_while_loop() {
+        let program = lower(&parse("fn update() -> void { continue; }").unwrap()).unwrap();
+        let error = check(&program).unwrap_err();
+        assert_eq!(
+            error.message,
+            "`continue` is only valid inside a while loop"
+        );
+    }
+
+    #[test]
+    fn accepts_continue_inside_a_while_loop() {
+        let program =
+            lower(&parse("fn update() -> void { while true { continue; } }").unwrap()).unwrap();
         check(&program).unwrap();
     }
 }

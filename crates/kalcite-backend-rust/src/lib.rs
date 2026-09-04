@@ -109,7 +109,10 @@ fn emit_body_free<'a>(
             loop_cleanup_start,
         );
     }
-    if !matches!(body.last(), Some(Stmt::Return(_) | Stmt::Break)) {
+    if !matches!(
+        body.last(),
+        Some(Stmt::Return(_) | Stmt::Break | Stmt::Continue)
+    ) {
         emit_deferred_free(out, program, &local_defers, scope, depth);
     }
 }
@@ -214,6 +217,11 @@ fn stmt_free(
             let start = loop_cleanup_start.expect("break must be typechecked inside a loop");
             emit_deferred_free(out, program, &active_defers[start..], scope, depth);
             out.push_str(&format!("{indent}break;\n"));
+        }
+        Stmt::Continue => {
+            let start = loop_cleanup_start.expect("continue must be typechecked inside a loop");
+            emit_deferred_free(out, program, &active_defers[start..], scope, depth);
+            out.push_str(&format!("{indent}continue;\n"));
         }
         Stmt::Return(v) => {
             if let Some(value) = v {
@@ -641,7 +649,10 @@ fn emit_body<'a>(
             loop_cleanup_start,
         );
     }
-    if !matches!(body.last(), Some(Stmt::Return(_) | Stmt::Break)) {
+    if !matches!(
+        body.last(),
+        Some(Stmt::Return(_) | Stmt::Break | Stmt::Continue)
+    ) {
         emit_deferred(out, program, class, &local_defers, scope, depth);
     }
 }
@@ -776,6 +787,11 @@ fn stmt(
             let start = loop_cleanup_start.expect("break must be typechecked inside a loop");
             emit_deferred(out, program, class, &active_defers[start..], scope, depth);
             out.push_str(&format!("{indent}break;\n"));
+        }
+        Stmt::Continue => {
+            let start = loop_cleanup_start.expect("continue must be typechecked inside a loop");
+            emit_deferred(out, program, class, &active_defers[start..], scope, depth);
+            out.push_str(&format!("{indent}continue;\n"));
         }
         Stmt::Return(value) => {
             if let Some(value) = value {
@@ -1115,6 +1131,24 @@ mod tests {
         assert!(branch < loop_cleanup && loop_cleanup < break_statement && break_statement < outer);
         assert_eq!(output.matches("branch_cleanup();").count(), 1);
         assert_eq!(output.matches("loop_cleanup();").count(), 2);
+    }
+
+    #[test]
+    fn continue_runs_the_current_iteration_cleanup_without_outer_defers() {
+        let output = emitted(
+            "@scene class G extends Game { fn update() -> void { defer outer(); while true { defer iteration_cleanup(); if true { defer branch_cleanup(); continue; } } } }",
+        );
+        let branch = output.find("branch_cleanup();").unwrap();
+        let iteration_cleanup = output.find("iteration_cleanup();").unwrap();
+        let continue_statement = output.find("continue;").unwrap();
+        let outer = output.find("outer();").unwrap();
+        assert!(
+            branch < iteration_cleanup
+                && iteration_cleanup < continue_statement
+                && continue_statement < outer
+        );
+        assert_eq!(output.matches("branch_cleanup();").count(), 1);
+        assert_eq!(output.matches("iteration_cleanup();").count(), 2);
     }
 
     #[test]
