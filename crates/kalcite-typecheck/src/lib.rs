@@ -230,6 +230,17 @@ fn expr_type(
             }
             Ok(Type::Named("call result".into()))
         }
+        Expr::Index { base, index } => {
+            let base = expr_type(base, symbols, functions)?;
+            let index = expr_type(index, symbols, functions)?;
+            numeric(&index, "array index")?;
+            match base {
+                Type::FixedArray(item, _) => Ok(*item),
+                other => Err(error(&format!(
+                    "index target must be a fixed array, got {other:?}"
+                ))),
+            }
+        }
         Expr::Unary { op, value } => {
             let value = expr_type(value, symbols, functions)?;
             match op {
@@ -336,6 +347,23 @@ mod tests {
         let program =
             lower(&parse("fn update() -> void { while true { break; } }").unwrap()).unwrap();
         check(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_fixed_array_indexing() {
+        let program = lower(
+            &parse("i16 read([i16; 2] values, i16 index) { return values[index]; }").unwrap(),
+        )
+        .unwrap();
+        check(&program).unwrap();
+    }
+
+    #[test]
+    fn rejects_non_numeric_array_indices() {
+        let program =
+            lower(&parse("i16 read([i16; 2] values) { return values[true]; }").unwrap()).unwrap();
+        let error = check(&program).unwrap_err();
+        assert_eq!(error.message, "array index must be numeric, got Bool");
     }
 
     #[test]

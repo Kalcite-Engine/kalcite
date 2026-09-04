@@ -147,6 +147,10 @@ pub enum Expr {
         callee: Box<Expr>,
         args: Vec<Expr>,
     },
+    Index {
+        base: Box<Expr>,
+        index: Box<Expr>,
+    },
     Unary {
         op: UnaryOp,
         value: Box<Expr>,
@@ -734,6 +738,15 @@ impl<'a> BodyParser<'a> {
                         args,
                     };
                 }
+                TokenKind::LBracket => {
+                    self.bump();
+                    let index = self.expr(0)?;
+                    self.expect(TokenKind::RBracket)?;
+                    e = Expr::Index {
+                        base: Box::new(e),
+                        index: Box::new(index),
+                    };
+                }
                 _ => break,
             }
         }
@@ -826,6 +839,18 @@ mod tests {
     fn parses_defer_statement() {
         let body = parse_body("defer cleanup(); return;").unwrap();
         assert!(matches!(body[0], Stmt::Defer(Expr::Call { .. })));
+    }
+
+    #[test]
+    fn parses_array_index_expressions() {
+        let body = parse_body("i16 value = samples[1 + offset];").unwrap();
+        assert!(matches!(
+            body[0],
+            Stmt::Local {
+                value: Some(Expr::Index { .. }),
+                ..
+            }
+        ));
     }
 
     #[test]

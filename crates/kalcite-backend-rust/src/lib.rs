@@ -390,6 +390,11 @@ fn expr_free(program: &Program, e: &Expr, scope: &HashSet<String>) -> String {
                 .join(", ");
             format!("{}({a})", expr_free(program, callee, scope))
         }
+        Expr::Index { base, index } => format!(
+            "({})[{}]",
+            expr_free(program, base, scope),
+            expr_free(program, index, scope)
+        ),
         Expr::Unary { op, value } => format!(
             "{}{}",
             match op {
@@ -892,6 +897,11 @@ fn expr(program: &Program, class: &Class, expression: &Expr, scope: &HashSet<Str
                 format!("{}({args})", expr(program, class, callee, scope))
             }
         }
+        Expr::Index { base, index } => format!(
+            "({})[{}]",
+            expr(program, class, base, scope),
+            expr(program, class, index, scope)
+        ),
         Expr::Unary { op, value } => format!(
             "{}{}",
             match op {
@@ -1093,6 +1103,18 @@ mod tests {
         assert!(r.contains("let mut x: i16 = 1;"));
         assert!(r.contains("x += 2;"));
         assert!(!r.contains("self.x += 2"));
+    }
+
+    #[test]
+    fn emits_fixed_array_indexing_for_reads_and_writes() {
+        let output = emitted(
+            "@scene class G extends Game { [i16; 2] samples = [1, 2]; fn update() -> void { i16 value = samples[0]; samples[1] = value; } }",
+        );
+        assert!(
+            output.contains("let mut value: i16 = (self.samples)[0];"),
+            "{output}"
+        );
+        assert!(output.contains("(self.samples)[1] = value;"), "{output}");
     }
 
     #[test]

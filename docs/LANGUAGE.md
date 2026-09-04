@@ -95,7 +95,7 @@ public i16 Clamp(i16 value, i16 maximum) {
 }
 ```
 
-Function bodies support calls, member access, array expressions, local declarations, assignments (including compound assignments), unary and binary operators, `if`/`else`, `while`, `break`, `continue`, `defer`, and `return`. Conditions may be written with or without parentheses where the parser permits it.
+Function bodies support calls, member access, fixed-array expressions and indexing (`samples[index]`), local declarations, assignments (including compound assignments), unary and binary operators, `if`/`else`, `while`, `break`, `continue`, `defer`, and `return`. Array indexes must be numeric and indexing a non-array is a type error. Conditions may be written with or without parentheses where the parser permits it.
 
 `defer expression;` runs the expression when the current lexical scope is left. Deferred expressions execute in last-in, first-out order and also run before a `return`; they do not allocate a closure or require a garbage collector.
 
