@@ -178,13 +178,20 @@ fn stmt_free(
         Stmt::Defer(_) => unreachable!("defer statements are handled by emit_body_free"),
         Stmt::Return(v) => {
             if let Some(value) = v {
-                out.push_str(&format!("{indent}return {{\n"));
-                out.push_str(&format!(
-                    "{indent}    let __klc_return_value = {};\n",
-                    expr_free(program, value, scope)
-                ));
-                emit_deferred_free(out, program, active_defers, scope, depth + 1);
-                out.push_str(&format!("{indent}    __klc_return_value\n{indent}}};\n"));
+                if active_defers.is_empty() {
+                    out.push_str(&format!(
+                        "{indent}return {};\n",
+                        expr_free(program, value, scope)
+                    ));
+                } else {
+                    out.push_str(&format!("{indent}return {{\n"));
+                    out.push_str(&format!(
+                        "{indent}    let __klc_return_value = {};\n",
+                        expr_free(program, value, scope)
+                    ));
+                    emit_deferred_free(out, program, active_defers, scope, depth + 1);
+                    out.push_str(&format!("{indent}    __klc_return_value\n{indent}}};\n"));
+                }
             } else {
                 emit_deferred_free(out, program, active_defers, scope, depth);
                 out.push_str(&format!("{indent}return;\n"));
@@ -705,13 +712,20 @@ fn stmt(
         Stmt::Defer(_) => unreachable!("defer statements are handled by emit_body"),
         Stmt::Return(value) => {
             if let Some(value) = value {
-                out.push_str(&format!("{indent}return {{\n"));
-                out.push_str(&format!(
-                    "{indent}    let __klc_return_value = {};\n",
-                    expr(program, class, value, scope)
-                ));
-                emit_deferred(out, program, class, active_defers, scope, depth + 1);
-                out.push_str(&format!("{indent}    __klc_return_value\n{indent}}};\n"));
+                if active_defers.is_empty() {
+                    out.push_str(&format!(
+                        "{indent}return {};\n",
+                        expr(program, class, value, scope)
+                    ));
+                } else {
+                    out.push_str(&format!("{indent}return {{\n"));
+                    out.push_str(&format!(
+                        "{indent}    let __klc_return_value = {};\n",
+                        expr(program, class, value, scope)
+                    ));
+                    emit_deferred(out, program, class, active_defers, scope, depth + 1);
+                    out.push_str(&format!("{indent}    __klc_return_value\n{indent}}};\n"));
+                }
             } else {
                 emit_deferred(out, program, class, active_defers, scope, depth);
                 out.push_str(&format!("{indent}return;\n"));
@@ -1030,6 +1044,14 @@ mod tests {
         let value = output.find("let __klc_return_value = source();").unwrap();
         let cleanup = output.find("cleanup();").unwrap();
         assert!(value < cleanup);
+    }
+
+    #[test]
+    fn emits_a_direct_return_when_no_cleanup_is_active() {
+        let output =
+            emitted("@scene class G extends Game { fn value() -> i16 { return source(); } }");
+        assert!(output.contains("return source();"));
+        assert!(!output.contains("__klc_return_value"));
     }
     #[test]
     fn resolves_nested_class_constructor() {
