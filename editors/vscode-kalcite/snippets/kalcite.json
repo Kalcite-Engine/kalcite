@@ -74,6 +74,13 @@
     ],
     "description": "Declare an inferred mutable stack local"
   },
+  "Kalcite deferred cleanup": {
+    "prefix": "kl-defer",
+    "body": [
+      "defer ${1:cleanup}(${0});"
+    ],
+    "description": "Run an expression in LIFO order when the current scope ends"
+  },
   "Native Rust block": {
     "prefix": "kl-rust",
     "body": [

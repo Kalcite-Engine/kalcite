@@ -6,6 +6,9 @@ Kalcite language server. Install `kalcite-lsp` on `PATH` (the Kallyup
 completion, hover, definitions, and document symbols are then provided by the
 server.
 
+The grammar recognizes deterministic `defer` cleanup statements, and the
+`kl-defer` snippet inserts a scope-exit cleanup expression.
+
 Override `kalcite.languageServer.path` when the binary is not on `PATH`; use
 `kalcite.languageServer.args` to supply server arguments. The extension keeps
 the LSP output in the **Kalcite Language Server** output channel.
