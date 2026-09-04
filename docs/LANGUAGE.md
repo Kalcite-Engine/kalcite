@@ -95,7 +95,17 @@ public i16 Clamp(i16 value, i16 maximum) {
 }
 ```
 
-Function bodies support calls, member access, array expressions, local declarations, assignments (including compound assignments), unary and binary operators, `if`/`else`, `while`, and `return`. Conditions may be written with or without parentheses where the parser permits it.
+Function bodies support calls, member access, array expressions, local declarations, assignments (including compound assignments), unary and binary operators, `if`/`else`, `while`, `defer`, and `return`. Conditions may be written with or without parentheses where the parser permits it.
+
+`defer expression;` runs the expression when the current lexical scope is left. Deferred expressions execute in last-in, first-out order and also run before a `return`; they do not allocate a closure or require a garbage collector.
+
+```klc
+public void WriteConfig() {
+    var file = Fs.open("config");
+    defer Fs.close(file);
+    WriteEntries(file);
+}
+```
 
 Kalcite does not document exceptions, coroutines, automatic dynamic dispatch, or hidden allocation as language features.
 
