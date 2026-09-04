@@ -61,7 +61,7 @@ fn check_function(
     for parameter in &function.params {
         symbols.insert(parameter.name.clone(), parameter.ty.clone());
     }
-    check_body(&function.body, &mut symbols, &function.ret, functions)
+    check_body(&function.body, &mut symbols, &function.ret, functions, 0)
 }
 
 fn check_body(
@@ -69,6 +69,7 @@ fn check_body(
     symbols: &mut BTreeMap<String, Type>,
     return_type: &Type,
     functions: &BTreeMap<String, &Function>,
+    loop_depth: usize,
 ) -> Result<()> {
     for statement in body {
         match statement {
@@ -116,8 +117,20 @@ fn check_body(
                     expr_type(condition, symbols, Some(functions))?,
                     "if condition",
                 )?;
-                check_body(then_body, &mut symbols.clone(), return_type, functions)?;
-                check_body(else_body, &mut symbols.clone(), return_type, functions)?;
+                check_body(
+                    then_body,
+                    &mut symbols.clone(),
+                    return_type,
+                    functions,
+                    loop_depth,
+                )?;
+                check_body(
+                    else_body,
+                    &mut symbols.clone(),
+                    return_type,
+                    functions,
+                    loop_depth,
+                )?;
             }
             Stmt::While { condition, body } => {
                 expect(
@@ -125,8 +138,18 @@ fn check_body(
                     expr_type(condition, symbols, Some(functions))?,
                     "while condition",
                 )?;
-                check_body(body, &mut symbols.clone(), return_type, functions)?;
+                check_body(
+                    body,
+                    &mut symbols.clone(),
+                    return_type,
+                    functions,
+                    loop_depth + 1,
+                )?;
             }
+            Stmt::Break if loop_depth == 0 => {
+                return Err(error("`break` is only valid inside a while loop"));
+            }
+            Stmt::Break => {}
             Stmt::Return(value) => match value {
                 Some(value) => expect(
                     return_type,
@@ -297,5 +320,19 @@ mod tests {
     fn rejects_a_boolean_u8_initializer() {
         let program = lower(&parse("public class Main { u8 value = true; }").unwrap()).unwrap();
         assert!(check(&program).is_err());
+    }
+
+    #[test]
+    fn rejects_break_outside_a_while_loop() {
+        let program = lower(&parse("fn update() -> void { break; }").unwrap()).unwrap();
+        let error = check(&program).unwrap_err();
+        assert_eq!(error.message, "`break` is only valid inside a while loop");
+    }
+
+    #[test]
+    fn accepts_break_inside_a_while_loop() {
+        let program =
+            lower(&parse("fn update() -> void { while true { break; } }").unwrap()).unwrap();
+        check(&program).unwrap();
     }
 }
