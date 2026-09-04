@@ -88,6 +88,13 @@
     ],
     "description": "Leave the innermost while loop after its local cleanup"
   },
+  "Kalcite loop continue": {
+    "prefix": "kl-continue",
+    "body": [
+      "continue;"
+    ],
+    "description": "Finish the current while iteration after its local cleanup"
+  },
   "Native Rust block": {
     "prefix": "kl-rust",
     "body": [
