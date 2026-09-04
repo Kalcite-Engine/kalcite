@@ -1,3 +1,5 @@
+use kalcite_platform_api::GpuTarget;
+
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct Camera {
     pub x: i32,
@@ -38,6 +40,24 @@ pub enum DrawCommand {
     Tilemap(Tilemap),
 }
 
+/// Backend-facing encoder for an immutable [`RenderFrame`].
+///
+/// Platform adapters implement this trait to translate Kalcite draw commands
+/// into their native GPU API. The renderer deliberately does not choose a
+/// graphics API or own a device, swapchain, or native window handle.
+pub trait RenderFrameEncoder {
+    type Error;
+
+    /// Start encoding a frame for the supplied generation-checked target.
+    fn begin_frame(&mut self, target: GpuTarget, camera: Camera) -> Result<(), Self::Error>;
+
+    /// Encode one sorted Kalcite draw command.
+    fn draw_command(&mut self, command: DrawCommand) -> Result<(), Self::Error>;
+
+    /// Finish encoding after every command was accepted.
+    fn end_frame(&mut self) -> Result<(), Self::Error>;
+}
+
 /// An immutable render submission prepared for one generation of a native GPU
 /// surface. Backends must check the target generation before presenting; this
 /// prevents a frame prepared before resize from reaching a replaced swapchain.
@@ -63,6 +83,19 @@ impl RenderFrame {
 
     pub fn draw_calls(&self) -> u32 {
         self.commands.len() as u32
+    }
+
+    /// Replay this immutable frame into a platform GPU encoder.
+    ///
+    /// Adapters must validate [`GpuTarget`] at their presentation boundary
+    /// before calling this method. Commands are delivered in the stable layer
+    /// order established by [`Renderer::finish`].
+    pub fn encode<E: RenderFrameEncoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
+        encoder.begin_frame(self.target, self.camera)?;
+        for command in &self.commands {
+            encoder.draw_command(*command)?;
+        }
+        encoder.end_frame()
     }
 }
 #[derive(Default)]
@@ -200,5 +233,83 @@ mod tests {
             ]
         ));
     }
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum EncodedEvent {
+        Begin(GpuTarget, Camera),
+        Draw(DrawCommand),
+        End,
+    }
+
+    #[derive(Default)]
+    struct RecordingEncoder {
+        events: Vec<EncodedEvent>,
+    }
+
+    impl RenderFrameEncoder for RecordingEncoder {
+        type Error = core::convert::Infallible;
+
+        fn begin_frame(&mut self, target: GpuTarget, camera: Camera) -> Result<(), Self::Error> {
+            self.events.push(EncodedEvent::Begin(target, camera));
+            Ok(())
+        }
+
+        fn draw_command(&mut self, command: DrawCommand) -> Result<(), Self::Error> {
+            self.events.push(EncodedEvent::Draw(command));
+            Ok(())
+        }
+
+        fn end_frame(&mut self) -> Result<(), Self::Error> {
+            self.events.push(EncodedEvent::End);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn render_frame_replays_sorted_commands_into_a_backend_encoder() {
+        let target = GpuTarget {
+            surface: kalcite_platform_api::SurfaceId::INVALID,
+            width: 320,
+            height: 240,
+            generation: 2,
+        };
+        let mut renderer = Renderer::default();
+        renderer.set_camera(12, -4);
+        renderer.push(Sprite {
+            asset: 2,
+            x: 8,
+            y: 9,
+            layer: 1,
+        });
+        renderer.push(Sprite {
+            asset: 1,
+            x: 3,
+            y: 4,
+            layer: -1,
+        });
+
+        let frame = renderer.finish(target);
+        let mut encoder = RecordingEncoder::default();
+        frame.encode(&mut encoder).unwrap();
+
+        assert_eq!(
+            encoder.events,
+            vec![
+                EncodedEvent::Begin(target, Camera { x: 12, y: -4 }),
+                EncodedEvent::Draw(DrawCommand::Sprite(Sprite {
+                    asset: 1,
+                    x: 3,
+                    y: 4,
+                    layer: -1,
+                })),
+                EncodedEvent::Draw(DrawCommand::Sprite(Sprite {
+                    asset: 2,
+                    x: 8,
+                    y: 9,
+                    layer: 1,
+                })),
+                EncodedEvent::End,
+            ]
+        );
+    }
 }
-use kalcite_platform_api::GpuTarget;
