@@ -2,10 +2,11 @@ name: Engine CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 concurrency:
-  group: engine-ci-${{ github.workflow }}-${{ github.ref }}
+  group: engine-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
