@@ -35,6 +35,14 @@ preserving the pointer phase and button. A miss stays available to the native
 application UI, so game input and SwiftUI/GTK/Qt/WinUI/Kotlin controls can
 share one window without competing for raw events.
 
+For drag gestures, `route_pointer_captured` adds one fixed-capacity capture
+slot per application surface. A press on an embedded game keeps later move and
+release events routed to that game after the native pointer leaves its view;
+coordinates are clamped to the game edge. The release clears capture, and a
+detach or destroy clears it as well. This provides conventional native drag
+semantics without transferring a SwiftUI, GTK, Qt, WinUI, or Kotlin event
+object into the renderer.
+
 Keyboard focus remains a native-toolkit decision. An adapter records its
 selection with `focus_embedded(parent, child)` and can query it with
 `focused_embedded(parent)`. `route_focused_key(parent, phase, key, modifiers)`
