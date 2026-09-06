@@ -1,5 +1,5 @@
 use kalcite_platform_api::{Buttons, GpuTarget, Platform, SurfaceRegistry};
-use kalcite_renderer::RenderFrame;
+use kalcite_renderer::{RenderFrame, RenderFrameEncoder};
 
 /// Outcome of submitting a renderer frame to a native-surface adapter.
 ///
@@ -8,6 +8,14 @@ use kalcite_renderer::RenderFrame;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FramePresentError {
     StaleTarget,
+}
+
+/// Failure while encoding a generation-validated renderer frame for a native
+/// adapter. Encoding errors do not count as a presented frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FrameEncodeError<E> {
+    StaleTarget,
+    Encoder(E),
 }
 
 /// A no-window reference adapter for the native UI/GPU contract.
@@ -35,14 +43,39 @@ impl<const SURFACES: usize> Default for NativeSurfaceHost<SURFACES> {
 }
 
 impl<const SURFACES: usize> NativeSurfaceHost<SURFACES> {
-    /// Validate and consume a frame at the presentation boundary.
-    pub fn present(&mut self, frame: RenderFrame) -> Result<(), FramePresentError> {
+    fn validate_frame(&self, frame: &RenderFrame) -> Result<(), FramePresentError> {
         if !self.surfaces.accepts_gpu_target(frame.target()) {
             return Err(FramePresentError::StaleTarget);
         }
+        Ok(())
+    }
+
+    fn record_presented(&mut self, frame: &RenderFrame) {
         self.presented_frames = self.presented_frames.saturating_add(1);
         self.last_target = Some(frame.target());
         self.last_draw_calls = frame.draw_calls();
+    }
+
+    /// Validate and consume a frame at the presentation boundary.
+    pub fn present(&mut self, frame: RenderFrame) -> Result<(), FramePresentError> {
+        self.validate_frame(&frame)?;
+        self.record_presented(&frame);
+        Ok(())
+    }
+
+    /// Validate a frame immediately before replaying it into a native GPU
+    /// encoder, then record presentation only after the encoder succeeds.
+    /// This gives Metal, Vulkan, Direct3D, OpenGL, and Skia adapters one
+    /// toolkit-independent lifecycle without giving the engine a device.
+    pub fn encode_and_present<E: RenderFrameEncoder>(
+        &mut self,
+        frame: &RenderFrame,
+        encoder: &mut E,
+    ) -> Result<(), FrameEncodeError<E::Error>> {
+        self.validate_frame(frame)
+            .map_err(|_| FrameEncodeError::StaleTarget)?;
+        frame.encode(encoder).map_err(FrameEncodeError::Encoder)?;
+        self.record_presented(frame);
         Ok(())
     }
 
@@ -103,7 +136,7 @@ impl<const N: usize> Platform for Headless<N> {
 mod tests {
     use super::*;
     use kalcite_platform_api::{SurfaceDescriptor, SurfaceRole};
-    use kalcite_renderer::{Renderer, Sprite};
+    use kalcite_renderer::{Camera, DrawCommand, Renderer, Sprite};
 
     const EMBEDDED_GAME: SurfaceDescriptor = SurfaceDescriptor {
         role: SurfaceRole::EmbeddedGame,
@@ -111,6 +144,32 @@ mod tests {
         height: 240,
         scale_x100: 100,
     };
+
+    #[derive(Default)]
+    struct CountingEncoder {
+        began: u32,
+        commands: u32,
+        ended: u32,
+    }
+
+    impl RenderFrameEncoder for CountingEncoder {
+        type Error = ();
+
+        fn begin_frame(&mut self, _: GpuTarget, _: Camera) -> Result<(), Self::Error> {
+            self.began += 1;
+            Ok(())
+        }
+
+        fn draw_command(&mut self, _: DrawCommand) -> Result<(), Self::Error> {
+            self.commands += 1;
+            Ok(())
+        }
+
+        fn end_frame(&mut self) -> Result<(), Self::Error> {
+            self.ended += 1;
+            Ok(())
+        }
+    }
 
     #[test]
     fn presentation_accepts_only_the_current_gpu_target() {
@@ -136,5 +195,33 @@ mod tests {
             Err(FramePresentError::StaleTarget)
         );
         assert_eq!(host.presented_frames(), 1);
+    }
+
+    #[test]
+    fn encoding_presents_only_after_a_current_frame_finishes() {
+        let mut host = NativeSurfaceHost::<1>::default();
+        let surface = host.surfaces.create(EMBEDDED_GAME).unwrap();
+        let target = host.surfaces.gpu_target(surface).unwrap();
+        let mut renderer = Renderer::default();
+        renderer.push(Sprite {
+            asset: 7,
+            x: 12,
+            y: 18,
+            layer: 0,
+        });
+        let frame = renderer.finish(target);
+        let mut encoder = CountingEncoder::default();
+
+        host.encode_and_present(&frame, &mut encoder).unwrap();
+
+        assert_eq!((encoder.began, encoder.commands, encoder.ended), (1, 1, 1));
+        assert_eq!(host.presented_frames(), 1);
+        host.surfaces.resize(surface, 640, 480).unwrap();
+        assert_eq!(
+            host.encode_and_present(&frame, &mut encoder),
+            Err(FrameEncodeError::StaleTarget)
+        );
+        assert_eq!(host.presented_frames(), 1);
+        assert_eq!((encoder.began, encoder.commands, encoder.ended), (1, 1, 1));
     }
 }
