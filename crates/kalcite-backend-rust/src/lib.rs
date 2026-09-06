@@ -405,9 +405,16 @@ fn expr_free(program: &Program, e: &Expr, scope: &HashSet<String>) -> String {
             parts.join("::")
         }
         Expr::Call { callee, args } => {
+            let text_intrinsic = text_intrinsic(callee);
             let a = args
                 .iter()
-                .map(|x| expr_free(program, x, scope))
+                .map(|argument| {
+                    if text_intrinsic {
+                        expr_text_argument_free(program, argument, scope)
+                    } else {
+                        expr_free(program, argument, scope)
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{}({a})", expr_free(program, callee, scope))
@@ -432,6 +439,17 @@ fn expr_free(program: &Program, e: &Expr, scope: &HashSet<String>) -> String {
             expr_free(program, right, scope)
         ),
     }
+}
+
+fn expr_text_argument_free(
+    program: &Program,
+    expression: &Expr,
+    scope: &HashSet<String>,
+) -> String {
+    if let Expr::String(value) = expression {
+        return format!("BoundedString::<{}>::from_str({value:?})", value.len());
+    }
+    expr_free(program, expression, scope)
 }
 
 /// A string literal becomes a bounded KLC value only where its declared
@@ -923,12 +941,7 @@ fn expr(program: &Program, class: &Class, expression: &Expr, scope: &HashSet<Str
         Expr::Path(parts) => render_path(program, class, parts, scope),
         Expr::Call { callee, args } => {
             if let Expr::Path(path) = callee.as_ref() {
-                let text_intrinsic = path.len() == 2
-                    && path[0] == "Text"
-                    && matches!(
-                        path[1].as_str(),
-                        "length" | "byte_at" | "byte_at_u32" | "equals"
-                    );
+                let text_intrinsic = text_intrinsic(callee);
                 let args = args
                     .iter()
                     .map(|argument| {
@@ -979,6 +992,16 @@ fn expr(program: &Program, class: &Class, expression: &Expr, scope: &HashSet<Str
             expr(program, class, right, scope)
         ),
     }
+}
+
+fn text_intrinsic(callee: &Expr) -> bool {
+    matches!(
+        callee,
+        Expr::Path(path)
+            if path.len() == 2
+                && path[0] == "Text"
+                && matches!(path[1].as_str(), "length" | "byte_at" | "byte_at_u32" | "equals")
+    )
 }
 
 /// Text intrinsics take bounded strings by value. String literals have no
@@ -1139,6 +1162,12 @@ mod tests {
         let h = kalcite_hir::lower(&ast).unwrap();
         let m = kalcite_mir::lower(&h);
         emit_game(&m).unwrap()
+    }
+    fn emitted_library(src: &str) -> String {
+        let ast = kalcite_syntax::parse(src).unwrap();
+        let h = kalcite_hir::lower(&ast).unwrap();
+        let m = kalcite_mir::lower(&h);
+        emit_library(&m, "").unwrap()
     }
     #[test]
     fn generated_game_is_a_plain_module_body() {
@@ -1340,6 +1369,16 @@ mod tests {
             "@scene class G extends Game { fn update() -> void { String[8] value = \"Kally\"; bool same = Text.equals(value, \"Kally\"); } }",
         );
         assert!(output.contains("Text::equals(value, BoundedString::<5>::from_str(\"Kally\"))"));
+    }
+
+    #[test]
+    fn materializes_text_literals_for_library_intrinsics() {
+        let output = emitted_library(
+            "public bool local(String[256] reference) { return Text.equals(reference, \"local\"); }",
+        );
+        assert!(
+            output.contains("Text::equals(reference, BoundedString::<5>::from_str(\"local\"))")
+        );
     }
     #[test]
     fn emits_hardware_and_text_builtins() {
