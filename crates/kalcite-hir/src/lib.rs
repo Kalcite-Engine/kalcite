@@ -102,6 +102,12 @@ pub enum Stmt {
         condition: Expr,
         body: Vec<Stmt>,
     },
+    /// Iterate over the values of a fixed-size array.
+    For {
+        binding: String,
+        iterable: Expr,
+        body: Vec<Stmt>,
+    },
     /// Evaluate this expression when its enclosing lexical scope is left.
     /// Deferred expressions run in last-in, first-out order.
     Defer(Expr),
@@ -430,6 +436,17 @@ impl<'a> BodyParser<'a> {
                 let c = self.condition()?;
                 Ok(Stmt::While {
                     condition: c,
+                    body: self.block()?,
+                })
+            }
+            TokenKind::For => {
+                self.bump();
+                let binding = self.ident()?;
+                self.expect(TokenKind::In)?;
+                let iterable = self.expr(0)?;
+                Ok(Stmt::For {
+                    binding,
+                    iterable,
                     body: self.block()?,
                 })
             }
@@ -833,6 +850,19 @@ mod tests {
             parse_body("if Input.held(Key.Left) { x += 1; } while x < 4 { x += 1; }").unwrap();
         assert_eq!(with_parens.len(), 2);
         assert_eq!(without_parens.len(), 2);
+    }
+
+    #[test]
+    fn parses_fixed_array_for_loop() {
+        let body = parse_body("for sample in samples { total += sample; }").unwrap();
+        assert!(matches!(
+            body[0],
+            Stmt::For {
+                ref binding,
+                body: ref loop_body,
+                ..
+            } if binding == "sample" && loop_body.len() == 1
+        ));
     }
 
     #[test]

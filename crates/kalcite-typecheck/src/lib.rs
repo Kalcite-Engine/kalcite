@@ -146,12 +146,31 @@ fn check_body(
                     loop_depth + 1,
                 )?;
             }
+            Stmt::For {
+                binding,
+                iterable,
+                body,
+            } => {
+                let iterable = expr_type(iterable, symbols, Some(functions))?;
+                let Type::FixedArray(element, _) = iterable else {
+                    return Err(error("`for` can only iterate a fixed array"));
+                };
+                let mut loop_symbols = symbols.clone();
+                loop_symbols.insert(binding.clone(), *element);
+                check_body(
+                    body,
+                    &mut loop_symbols,
+                    return_type,
+                    functions,
+                    loop_depth + 1,
+                )?;
+            }
             Stmt::Break if loop_depth == 0 => {
-                return Err(error("`break` is only valid inside a while loop"));
+                return Err(error("`break` is only valid inside a loop"));
             }
             Stmt::Break => {}
             Stmt::Continue if loop_depth == 0 => {
-                return Err(error("`continue` is only valid inside a while loop"));
+                return Err(error("`continue` is only valid inside a loop"));
             }
             Stmt::Continue => {}
             Stmt::Return(value) => match value {
@@ -336,10 +355,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_break_outside_a_while_loop() {
+    fn rejects_break_outside_a_loop() {
         let program = lower(&parse("fn update() -> void { break; }").unwrap()).unwrap();
         let error = check(&program).unwrap_err();
-        assert_eq!(error.message, "`break` is only valid inside a while loop");
+        assert_eq!(error.message, "`break` is only valid inside a loop");
     }
 
     #[test]
@@ -359,6 +378,23 @@ mod tests {
     }
 
     #[test]
+    fn accepts_for_over_fixed_array() {
+        let program = lower(
+            &parse("i16 sum([i16; 2] values) { i16 total = 0; for value in values { total += value; } return total; }").unwrap(),
+        )
+        .unwrap();
+        check(&program).unwrap();
+    }
+
+    #[test]
+    fn rejects_for_over_non_array() {
+        let program =
+            lower(&parse("void update(i16 value) { for item in value { } }").unwrap()).unwrap();
+        let error = check(&program).unwrap_err();
+        assert_eq!(error.message, "`for` can only iterate a fixed array");
+    }
+
+    #[test]
     fn rejects_non_numeric_array_indices() {
         let program =
             lower(&parse("i16 read([i16; 2] values) { return values[true]; }").unwrap()).unwrap();
@@ -367,13 +403,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_continue_outside_a_while_loop() {
+    fn rejects_continue_outside_a_loop() {
         let program = lower(&parse("fn update() -> void { continue; }").unwrap()).unwrap();
         let error = check(&program).unwrap_err();
-        assert_eq!(
-            error.message,
-            "`continue` is only valid inside a while loop"
-        );
+        assert_eq!(error.message, "`continue` is only valid inside a loop");
     }
 
     #[test]
