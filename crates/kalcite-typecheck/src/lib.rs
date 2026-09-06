@@ -469,6 +469,15 @@ mod tests {
     }
 
     #[test]
+    fn types_text_equality_with_a_literal() {
+        let program = lower(
+            &parse("bool same(String[16] left) { return Text.equals(left, \"Kally\"); }").unwrap(),
+        )
+        .unwrap();
+        check(&program).unwrap();
+    }
+
+    #[test]
     fn rejects_text_equality_with_a_non_string() {
         let program = lower(
             &parse("bool invalid(String[8] text, u32 value) { return Text.equals(text, value); }")

@@ -922,12 +922,24 @@ fn expr(program: &Program, class: &Class, expression: &Expr, scope: &HashSet<Str
         ),
         Expr::Path(parts) => render_path(program, class, parts, scope),
         Expr::Call { callee, args } => {
-            let args = args
-                .iter()
-                .map(|x| expr(program, class, x, scope))
-                .collect::<Vec<_>>()
-                .join(", ");
             if let Expr::Path(path) = callee.as_ref() {
+                let text_intrinsic = path.len() == 2
+                    && path[0] == "Text"
+                    && matches!(
+                        path[1].as_str(),
+                        "length" | "byte_at" | "byte_at_u32" | "equals"
+                    );
+                let args = args
+                    .iter()
+                    .map(|argument| {
+                        if text_intrinsic {
+                            expr_text_argument(program, class, argument, scope)
+                        } else {
+                            expr(program, class, argument, scope)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 if path.len() == 1 && path[0] == "Vec2fx" {
                     return format!("Vec2fx::new({args})");
                 }
@@ -939,6 +951,11 @@ fn expr(program: &Program, class: &Class, expression: &Expr, scope: &HashSet<Str
                 let callee = render_path(program, class, path, scope);
                 format!("{callee}({args})")
             } else {
+                let args = args
+                    .iter()
+                    .map(|argument| expr(program, class, argument, scope))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 format!("{}({args})", expr(program, class, callee, scope))
             }
         }
@@ -962,6 +979,21 @@ fn expr(program: &Program, class: &Class, expression: &Expr, scope: &HashSet<Str
             expr(program, class, right, scope)
         ),
     }
+}
+
+/// Text intrinsics take bounded strings by value. String literals have no
+/// declaration site from which a capacity can be inferred, so materialize the
+/// smallest allocation-free bounded representation at the call site.
+fn expr_text_argument(
+    program: &Program,
+    class: &Class,
+    expression: &Expr,
+    scope: &HashSet<String>,
+) -> String {
+    if let Expr::String(value) = expression {
+        return format!("BoundedString::<{}>::from_str({value:?})", value.len());
+    }
+    expr(program, class, expression, scope)
 }
 
 fn expr_for_type(
@@ -1300,6 +1332,14 @@ mod tests {
             "@scene class G extends Game { fn same(left: String[8], right: String[32]) -> bool { return Text.equals(left, right); } }",
         );
         assert!(output.contains("Text::equals(left, right)"));
+    }
+
+    #[test]
+    fn materializes_text_literals_for_text_intrinsics() {
+        let output = emitted(
+            "@scene class G extends Game { fn update() -> void { String[8] value = \"Kally\"; bool same = Text.equals(value, \"Kally\"); } }",
+        );
+        assert!(output.contains("Text::equals(value, BoundedString::<5>::from_str(\"Kally\"))"));
     }
     #[test]
     fn emits_hardware_and_text_builtins() {
