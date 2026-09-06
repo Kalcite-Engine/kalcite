@@ -321,7 +321,7 @@ fn intrinsic_call_type(
     let expected = match name {
         "length" => 1,
         "byte_at" | "byte_at_u32" => 2,
-        "equals" => 2,
+        "equals" | "starts_with" => 2,
         _ => return Ok(None),
     };
     if args.len() != expected {
@@ -338,10 +338,10 @@ fn intrinsic_call_type(
     }
     if expected == 2 {
         let second = expr_type(&args[1], symbols, functions)?;
-        if name == "equals" {
+        if matches!(name, "equals" | "starts_with") {
             if !matches!(second, Type::BoundedString(_)) {
                 return Err(error(&format!(
-                    "`Text.equals` expects a bounded string, got {second:?}"
+                    "`Text.{name}` expects a bounded string, got {second:?}"
                 )));
             }
         } else {
@@ -351,7 +351,7 @@ fn intrinsic_call_type(
     Ok(Some(match name {
         "length" | "byte_at_u32" => Type::U32,
         "byte_at" => Type::U8,
-        "equals" => Type::Bool,
+        "equals" | "starts_with" => Type::Bool,
         _ => unreachable!(),
     }))
 }
@@ -472,6 +472,18 @@ mod tests {
     fn types_text_equality_with_a_literal() {
         let program = lower(
             &parse("bool same(String[16] left) { return Text.equals(left, \"Kally\"); }").unwrap(),
+        )
+        .unwrap();
+        check(&program).unwrap();
+    }
+
+    #[test]
+    fn types_text_prefix_with_a_literal() {
+        let program = lower(
+            &parse(
+                "bool git_source(String[512] source) { return Text.starts_with(source, \"git:\"); }",
+            )
+            .unwrap(),
         )
         .unwrap();
         check(&program).unwrap();

@@ -31,6 +31,10 @@ impl Text {
     #[inline] pub fn set_byte<const N: usize>(value: &mut BoundedString<N>, index: u32, byte: u8) -> bool { value.set_byte(index, byte) }
     #[inline] pub fn push_byte<const N: usize>(value: &mut BoundedString<N>, byte: u8) -> bool { value.push_byte(byte) }
     #[inline] pub fn equals<const L: usize, const R: usize>(left: BoundedString<L>, right: BoundedString<R>) -> bool { left.equals(&right) }
+    #[inline] pub fn starts_with<const L: usize, const R: usize>(value: BoundedString<L>, prefix: BoundedString<R>) -> bool {
+        let length = prefix.len as usize;
+        value.len >= prefix.len && value.bytes[..length] == prefix.bytes[..length]
+    }
 }
 
 pub struct Math;
