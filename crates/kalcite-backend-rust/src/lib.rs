@@ -1000,7 +1000,7 @@ fn text_intrinsic(callee: &Expr) -> bool {
         Expr::Path(path)
             if path.len() == 2
                 && path[0] == "Text"
-                && matches!(path[1].as_str(), "length" | "byte_at" | "byte_at_u32" | "equals")
+                && matches!(path[1].as_str(), "length" | "byte_at" | "byte_at_u32" | "equals" | "starts_with")
     )
 }
 
@@ -1378,6 +1378,16 @@ mod tests {
         );
         assert!(
             output.contains("Text::equals(reference, BoundedString::<5>::from_str(\"local\"))")
+        );
+    }
+
+    #[test]
+    fn materializes_prefix_literals_for_library_intrinsics() {
+        let output = emitted_library(
+            "public bool git_source(String[512] source) { return Text.starts_with(source, \"git:\"); }",
+        );
+        assert!(
+            output.contains("Text::starts_with(source, BoundedString::<4>::from_str(\"git:\"))")
         );
     }
     #[test]
