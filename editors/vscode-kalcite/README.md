@@ -9,7 +9,8 @@ server.
 The grammar recognizes deterministic `defer` cleanup statements and both
 `while` and fixed-array `for item in items` loops. `kl-defer` inserts a
 scope-exit cleanup expression, `kl-break` and `kl-continue` insert loop
-control flow, and `kl-for` inserts a fixed-array iteration.
+control flow, `kl-for` inserts a fixed-array iteration, and `kl-text-equals`
+inserts allocation-free `Text.equals(value, "literal")` comparison.
 
 Override `kalcite.languageServer.path` when the binary is not on `PATH`; use
 `kalcite.languageServer.args` to supply server arguments. The extension keeps

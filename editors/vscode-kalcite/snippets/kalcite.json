@@ -104,6 +104,13 @@
     ],
     "description": "Iterate the values of a fixed-size array"
   },
+  "Kalcite bounded text equality": {
+    "prefix": "kl-text-equals",
+    "body": [
+      "Text.equals(${1:value}, \"${2:literal}\")"
+    ],
+    "description": "Compare bounded text with a fixed string literal without allocation"
+  },
   "Native Rust block": {
     "prefix": "kl-rust",
     "body": [
