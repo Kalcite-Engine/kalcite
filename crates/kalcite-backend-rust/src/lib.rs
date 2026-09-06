@@ -212,6 +212,28 @@ fn stmt_free(
             );
             out.push_str(&format!("{indent}}}\n"));
         }
+        Stmt::For {
+            binding,
+            iterable,
+            body,
+        } => {
+            out.push_str(&format!(
+                "{indent}for {binding} in {} {{\n",
+                expr_free(program, iterable, scope)
+            ));
+            let mut loop_scope = scope.clone();
+            loop_scope.insert(binding.clone());
+            emit_body_free(
+                out,
+                program,
+                body,
+                &mut loop_scope,
+                depth + 1,
+                active_defers,
+                Some(active_defers.len()),
+            );
+            out.push_str(&format!("{indent}}}\n"));
+        }
         Stmt::Defer(_) => unreachable!("defer statements are handled by emit_body_free"),
         Stmt::Break => {
             let start = loop_cleanup_start.expect("break must be typechecked inside a loop");
@@ -787,6 +809,29 @@ fn stmt(
             );
             out.push_str(&format!("{indent}}}\n"));
         }
+        Stmt::For {
+            binding,
+            iterable,
+            body,
+        } => {
+            out.push_str(&format!(
+                "{indent}for {binding} in {} {{\n",
+                expr(program, class, iterable, scope)
+            ));
+            let mut loop_scope = scope.clone();
+            loop_scope.insert(binding.clone());
+            emit_body(
+                out,
+                program,
+                class,
+                body,
+                &mut loop_scope,
+                depth + 1,
+                active_defers,
+                Some(active_defers.len()),
+            );
+            out.push_str(&format!("{indent}}}\n"));
+        }
         Stmt::Defer(_) => unreachable!("defer statements are handled by emit_body"),
         Stmt::Break => {
             let start = loop_cleanup_start.expect("break must be typechecked inside a loop");
@@ -1115,6 +1160,27 @@ mod tests {
             "{output}"
         );
         assert!(output.contains("(self.samples)[1] = value;"), "{output}");
+    }
+
+    #[test]
+    fn emits_for_over_a_fixed_array() {
+        let output = emitted(
+            "@scene class G extends Game { [i16; 2] samples = [1, 2]; fn update() -> void { for sample in samples { Draw.point(sample, 0, Color.White); } } }",
+        );
+        assert!(output.contains("for sample in self.samples {"));
+        assert!(output.contains("Draw::point(sample, 0, Color::White);"));
+    }
+
+    #[test]
+    fn continue_in_for_runs_iteration_defers() {
+        let output = emitted(
+            "@scene class G extends Game { [i16; 2] samples = [1, 2]; fn update() -> void { defer outer(); for sample in samples { defer iteration_cleanup(); continue; } } }",
+        );
+        let cleanup = output.find("iteration_cleanup();").unwrap();
+        let continuation = output.find("continue;").unwrap();
+        let outer = output.rfind("outer();").unwrap();
+        assert!(cleanup < continuation && continuation < outer);
+        assert_eq!(output.matches("iteration_cleanup();").count(), 1);
     }
 
     #[test]
