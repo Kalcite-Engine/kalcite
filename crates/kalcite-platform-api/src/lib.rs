@@ -108,6 +108,31 @@ impl EmbeddedView {
         let mapped_y = local_y * height as i64 / self.height as i64;
         (mapped_x as u16, mapped_y as u16)
     }
+
+    /// Map an arbitrary parent point while constraining it to the embedded
+    /// view. This is used for native pointer capture after a drag leaves the
+    /// child bounds.
+    pub const fn map_point_clamped(self, x: i32, y: i32, width: u16, height: u16) -> (u16, u16) {
+        let left = self.x as i32;
+        let top = self.y as i32;
+        let right = left + self.width as i32 - 1;
+        let bottom = top + self.height as i32 - 1;
+        let clamped_x = if x < left {
+            left
+        } else if x > right {
+            right
+        } else {
+            x
+        };
+        let clamped_y = if y < top {
+            top
+        } else if y > bottom {
+            bottom
+        } else {
+            y
+        };
+        self.map_point(clamped_x, clamped_y, width, height)
+    }
 }
 
 /// The phase of a pointer event after a platform adapter has normalized it.
@@ -184,6 +209,7 @@ struct SurfaceSlot {
     descriptor: SurfaceDescriptor,
     parent: SurfaceId,
     focused: SurfaceId,
+    captured: SurfaceId,
     view: EmbeddedView,
 }
 
@@ -206,6 +232,7 @@ const EMPTY_SLOT: SurfaceSlot = SurfaceSlot {
     descriptor: EMPTY_DESCRIPTOR,
     parent: SurfaceId::INVALID,
     focused: SurfaceId::INVALID,
+    captured: SurfaceId::INVALID,
     view: EMPTY_VIEW,
 };
 
@@ -243,6 +270,7 @@ impl<const N: usize> SurfaceRegistry<N> {
         slot.descriptor = descriptor;
         slot.parent = SurfaceId::INVALID;
         slot.focused = SurfaceId::INVALID;
+        slot.captured = SurfaceId::INVALID;
         slot.view = EMPTY_VIEW;
         Ok(SurfaceId {
             slot: index as u16,
@@ -260,16 +288,21 @@ impl<const N: usize> SurfaceRegistry<N> {
                 slot.active = false;
                 slot.parent = SurfaceId::INVALID;
                 slot.focused = SurfaceId::INVALID;
+                slot.captured = SurfaceId::INVALID;
                 slot.view = EMPTY_VIEW;
             }
             if slot.active && slot.focused == id {
                 slot.focused = SurfaceId::INVALID;
+            }
+            if slot.active && slot.captured == id {
+                slot.captured = SurfaceId::INVALID;
             }
         }
         let slot = self.slot_mut(id)?;
         slot.active = false;
         slot.parent = SurfaceId::INVALID;
         slot.focused = SurfaceId::INVALID;
+        slot.captured = SurfaceId::INVALID;
         slot.view = EMPTY_VIEW;
         Ok(())
     }
@@ -323,6 +356,9 @@ impl<const N: usize> SurfaceRegistry<N> {
         child_slot.view = EMPTY_VIEW;
         if parent != SurfaceId::INVALID && self.slot(parent)?.focused == child {
             self.slot_mut(parent)?.focused = SurfaceId::INVALID;
+        }
+        if parent != SurfaceId::INVALID && self.slot(parent)?.captured == child {
+            self.slot_mut(parent)?.captured = SurfaceId::INVALID;
         }
         Ok(())
     }
@@ -431,6 +467,62 @@ impl<const N: usize> SurfaceRegistry<N> {
             y,
             button,
         }))
+    }
+
+    /// Route a pointer event with one captured pointer per application
+    /// surface. A press inside an embedded game captures subsequent movement
+    /// and release events for that game even outside its rectangle; those
+    /// outside coordinates are clamped to the game edge. This keeps native
+    /// drag semantics consistent across SwiftUI, GTK, Qt, WinUI, and Kotlin
+    /// without importing their event systems.
+    pub fn route_pointer_captured(
+        &mut self,
+        parent: SurfaceId,
+        phase: PointerPhase,
+        x: i32,
+        y: i32,
+        button: u8,
+    ) -> Result<Option<RoutedPointerEvent>, SurfaceError> {
+        if self.slot(parent)?.descriptor.role != SurfaceRole::Application {
+            return Err(SurfaceError::InvalidEmbedding);
+        }
+        let surface = match phase {
+            PointerPhase::Press => {
+                let hit = self.embedded_at(parent, x, y)?;
+                self.slot_mut(parent)?.captured = hit.unwrap_or(SurfaceId::INVALID);
+                hit
+            }
+            PointerPhase::Move | PointerPhase::Release => {
+                let captured = self.slot(parent)?.captured;
+                if captured != SurfaceId::INVALID
+                    && self.slot(captured).is_ok_and(|slot| {
+                        slot.parent == parent && slot.descriptor.role == SurfaceRole::EmbeddedGame
+                    })
+                {
+                    Some(captured)
+                } else {
+                    self.embedded_at(parent, x, y)?
+                }
+            }
+        };
+        let Some(surface) = surface else {
+            return Ok(None);
+        };
+        let slot = self.slot(surface)?;
+        let (x, y) =
+            slot.view
+                .map_point_clamped(x, y, slot.descriptor.width, slot.descriptor.height);
+        let event = RoutedPointerEvent {
+            surface,
+            phase,
+            x,
+            y,
+            button,
+        };
+        if phase == PointerPhase::Release {
+            self.slot_mut(parent)?.captured = SurfaceId::INVALID;
+        }
+        Ok(Some(event))
     }
 
     /// Route a keyboard event to a focused directly embedded game view.
@@ -700,6 +792,60 @@ mod surface_tests {
         );
         assert_eq!(
             surfaces.route_pointer(app, PointerPhase::Move, 700, 250, 0),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn captured_pointer_routes_drag_and_release_outside_the_game_view() {
+        let mut surfaces = SurfaceRegistry::<2>::default();
+        let app = surfaces.create(APP).unwrap();
+        let game = surfaces.create(GAME).unwrap();
+        surfaces
+            .embed(
+                app,
+                game,
+                EmbeddedView {
+                    x: 0,
+                    y: 0,
+                    width: 640,
+                    height: 480,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            surfaces.route_pointer_captured(app, PointerPhase::Press, 320, 240, 1),
+            Ok(Some(RoutedPointerEvent {
+                surface: game,
+                phase: PointerPhase::Press,
+                x: 160,
+                y: 120,
+                button: 1,
+            }))
+        );
+        assert_eq!(
+            surfaces.route_pointer_captured(app, PointerPhase::Move, 700, 600, 0),
+            Ok(Some(RoutedPointerEvent {
+                surface: game,
+                phase: PointerPhase::Move,
+                x: 319,
+                y: 239,
+                button: 0,
+            }))
+        );
+        assert_eq!(
+            surfaces.route_pointer_captured(app, PointerPhase::Release, -10, -10, 1),
+            Ok(Some(RoutedPointerEvent {
+                surface: game,
+                phase: PointerPhase::Release,
+                x: 0,
+                y: 0,
+                button: 1,
+            }))
+        );
+        assert_eq!(
+            surfaces.route_pointer_captured(app, PointerPhase::Move, 700, 600, 0),
             Ok(None)
         );
     }
