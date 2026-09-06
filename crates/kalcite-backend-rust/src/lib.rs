@@ -1293,6 +1293,14 @@ mod tests {
         );
         assert!(output.contains("Text::length(tag)"));
     }
+
+    #[test]
+    fn emits_text_equality_for_different_string_capacities() {
+        let output = emitted(
+            "@scene class G extends Game { fn same(left: String[8], right: String[32]) -> bool { return Text.equals(left, right); } }",
+        );
+        assert!(output.contains("Text::equals(left, right)"));
+    }
     #[test]
     fn emits_hardware_and_text_builtins() {
         let r = emitted(

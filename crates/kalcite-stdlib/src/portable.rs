@@ -18,7 +18,7 @@ impl<const N: usize> BoundedString<N> {
     #[inline] pub fn byte_at(&self, index: u32) -> u8 { self.bytes.get(index as usize).copied().filter(|_| index < self.len as u32).unwrap_or(0) }
     #[inline] pub fn set_byte(&mut self, index: u32, value: u8) -> bool { if let Some(slot) = self.bytes.get_mut(index as usize) { *slot = value; if index >= self.len as u32 { self.len = (index + 1).min(u16::MAX as u32) as u16; } true } else { false } }
     #[inline] pub fn push_byte(&mut self, value: u8) -> bool { self.set_byte(self.len as u32, value) }
-    pub fn equals(&self, other: &Self) -> bool { self.len == other.len && self.bytes[..self.len as usize] == other.bytes[..other.len as usize] }
+    pub fn equals<const M: usize>(&self, other: &BoundedString<M>) -> bool { self.len == other.len && self.bytes[..self.len as usize] == other.bytes[..other.len as usize] }
 }
 
 /// Operations exposed to KLC for `String[N]`; keeping them here gives the
@@ -30,7 +30,7 @@ impl Text {
     #[inline] pub fn byte_at_u32<const N: usize>(value: BoundedString<N>, index: u32) -> u32 { value.byte_at(index) as u32 }
     #[inline] pub fn set_byte<const N: usize>(value: &mut BoundedString<N>, index: u32, byte: u8) -> bool { value.set_byte(index, byte) }
     #[inline] pub fn push_byte<const N: usize>(value: &mut BoundedString<N>, byte: u8) -> bool { value.push_byte(byte) }
-    #[inline] pub fn equals<const N: usize>(left: BoundedString<N>, right: BoundedString<N>) -> bool { left.equals(&right) }
+    #[inline] pub fn equals<const L: usize, const R: usize>(left: BoundedString<L>, right: BoundedString<R>) -> bool { left.equals(&right) }
 }
 
 pub struct Math;

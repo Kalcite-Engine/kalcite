@@ -321,6 +321,7 @@ fn intrinsic_call_type(
     let expected = match name {
         "length" => 1,
         "byte_at" | "byte_at_u32" => 2,
+        "equals" => 2,
         _ => return Ok(None),
     };
     if args.len() != expected {
@@ -336,14 +337,21 @@ fn intrinsic_call_type(
         )));
     }
     if expected == 2 {
-        numeric(
-            &expr_type(&args[1], symbols, functions)?,
-            "`Text` byte index",
-        )?;
+        let second = expr_type(&args[1], symbols, functions)?;
+        if name == "equals" {
+            if !matches!(second, Type::BoundedString(_)) {
+                return Err(error(&format!(
+                    "`Text.equals` expects a bounded string, got {second:?}"
+                )));
+            }
+        } else {
+            numeric(&second, "`Text` byte index")?;
+        }
     }
     Ok(Some(match name {
         "length" | "byte_at_u32" => Type::U32,
         "byte_at" => Type::U8,
+        "equals" => Type::Bool,
         _ => unreachable!(),
     }))
 }
@@ -445,6 +453,32 @@ mod tests {
         assert_eq!(
             error.message,
             "`Text.length` expects a bounded string, got U32"
+        );
+    }
+
+    #[test]
+    fn types_bounded_text_equality() {
+        let program = lower(
+            &parse(
+                "bool same(String[16] left, String[32] right) { return Text.equals(left, right); }",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        check(&program).unwrap();
+    }
+
+    #[test]
+    fn rejects_text_equality_with_a_non_string() {
+        let program = lower(
+            &parse("bool invalid(String[8] text, u32 value) { return Text.equals(text, value); }")
+                .unwrap(),
+        )
+        .unwrap();
+        let error = check(&program).unwrap_err();
+        assert_eq!(
+            error.message,
+            "`Text.equals` expects a bounded string, got U32"
         );
     }
 
