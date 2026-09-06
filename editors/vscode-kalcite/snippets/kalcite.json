@@ -111,6 +111,13 @@
     ],
     "description": "Compare bounded text with a fixed string literal without allocation"
   },
+  "Kalcite bounded text prefix": {
+    "prefix": "kl-text-starts-with",
+    "body": [
+      "Text.starts_with(${1:value}, \"${2:prefix}\")"
+    ],
+    "description": "Test a bounded text prefix with a fixed string literal without allocation"
+  },
   "Native Rust block": {
     "prefix": "kl-rust",
     "body": [
