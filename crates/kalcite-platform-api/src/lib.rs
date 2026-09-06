@@ -299,6 +299,22 @@ impl<const N: usize> SurfaceRegistry<N> {
         Ok(())
     }
 
+    /// Detach an embedded game from its current native application view.
+    /// The game surface remains alive and can be embedded again by another
+    /// application surface, which maps directly to SwiftUI/GTK/Qt/WinUI/Kotlin
+    /// view reparenting without recreating GPU state.
+    pub fn unembed(&mut self, child: SurfaceId) -> Result<(), SurfaceError> {
+        let child_slot = self.slot_mut(child)?;
+        if child_slot.descriptor.role != SurfaceRole::EmbeddedGame
+            || child_slot.parent == SurfaceId::INVALID
+        {
+            return Err(SurfaceError::InvalidEmbedding);
+        }
+        child_slot.parent = SurfaceId::INVALID;
+        child_slot.view = EMPTY_VIEW;
+        Ok(())
+    }
+
     pub fn gpu_target(&self, id: SurfaceId) -> Result<GpuTarget, SurfaceError> {
         let slot = self.slot(id)?;
         Ok(GpuTarget {
@@ -526,6 +542,44 @@ mod surface_tests {
 
         assert!(!surfaces.accepts_gpu_target(target));
         assert_eq!(surfaces.gpu_target(game), Err(SurfaceError::StaleHandle));
+    }
+
+    #[test]
+    fn embedded_game_can_be_detached_and_reparented_without_recreation() {
+        let mut surfaces = SurfaceRegistry::<3>::default();
+        let first = surfaces.create(APP).unwrap();
+        let second = surfaces.create(APP).unwrap();
+        let game = surfaces.create(GAME).unwrap();
+        let target = surfaces.gpu_target(game).unwrap();
+        surfaces
+            .embed(
+                first,
+                game,
+                EmbeddedView {
+                    x: 0,
+                    y: 0,
+                    width: 320,
+                    height: 240,
+                },
+            )
+            .unwrap();
+        surfaces.unembed(game).unwrap();
+        assert_eq!(surfaces.embedded_view(game), Ok(None));
+        assert_eq!(surfaces.embedded_at(first, 8, 8), Ok(None));
+        assert!(surfaces.accepts_gpu_target(target));
+        surfaces
+            .embed(
+                second,
+                game,
+                EmbeddedView {
+                    x: 12,
+                    y: 16,
+                    width: 640,
+                    height: 480,
+                },
+            )
+            .unwrap();
+        assert_eq!(surfaces.embedded_at(second, 20, 20), Ok(Some(game)));
     }
 
     #[test]

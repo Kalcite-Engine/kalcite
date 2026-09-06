@@ -11,6 +11,10 @@ owns only opaque generation-checked `SurfaceId` values and layout metadata.
 
 An application surface may embed an `EmbeddedGame` surface through
 `SurfaceRegistry::embed`. The renderer receives a `GpuTarget` from that child.
+When a native toolkit removes or reparents that view, call
+`SurfaceRegistry::unembed`: the game surface and its generation-checked GPU
+target remain alive and may be embedded by another application without a
+renderer recreation.
 Resizing the child invalidates the target generation but preserves the native
 surface handle, allowing a toolkit to recreate only its swapchain/framebuffer.
 Destroying the application invalidates each directly embedded child as well,
