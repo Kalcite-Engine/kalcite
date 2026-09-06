@@ -99,6 +99,8 @@ Function bodies support calls, member access, fixed-array expressions and indexi
 
 `defer expression;` runs the expression when the current lexical scope is left. Deferred expressions execute in last-in, first-out order and also run before a `return`; they do not allocate a closure or require a garbage collector.
 
+Bounded strings expose a portable, allocation-free byte interface through `Text`: `Text.length(value)` returns a `u32`, `Text.byte_at(value, index)` returns a `u8`, and `Text.byte_at_u32(value, index)` returns that byte widened to `u32`. These intrinsic signatures are typechecked, so package code can validate and hash bounded text without an untyped native escape hatch.
+
 `break;` is valid only inside a `while` body. It leaves the innermost loop after running the deferred expressions belonging to the loop body and any nested lexical block it leaves; defers registered outside that loop remain active until their own scope is left.
 
 `continue;` is also valid only inside a `while` body. It ends the current iteration after running the deferred expressions belonging to the loop body and any nested lexical block it leaves; defers registered outside the loop remain active.

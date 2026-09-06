@@ -223,26 +223,30 @@ fn expr_type(
             Ok(Type::FixedArray(Box::new(item), values.len()))
         }
         Expr::Call { callee, args } => {
-            if let Expr::Path(path) = callee.as_ref()
-                && path.len() == 1
-                && let Some(function) = functions.and_then(|functions| functions.get(&path[0]))
-            {
-                if args.len() != function.params.len() {
-                    return Err(error(&format!(
-                        "`{}` expects {} arguments, got {}",
-                        path[0],
-                        function.params.len(),
-                        args.len()
-                    )));
+            if let Expr::Path(path) = callee.as_ref() {
+                if let Some(ty) = intrinsic_call_type(path, args, symbols, functions)? {
+                    return Ok(ty);
                 }
-                for (argument, parameter) in args.iter().zip(&function.params) {
-                    expect(
-                        &parameter.ty,
-                        expr_type(argument, symbols, functions)?,
-                        "function argument",
-                    )?;
+                if path.len() == 1
+                    && let Some(function) = functions.and_then(|functions| functions.get(&path[0]))
+                {
+                    if args.len() != function.params.len() {
+                        return Err(error(&format!(
+                            "`{}` expects {} arguments, got {}",
+                            path[0],
+                            function.params.len(),
+                            args.len()
+                        )));
+                    }
+                    for (argument, parameter) in args.iter().zip(&function.params) {
+                        expect(
+                            &parameter.ty,
+                            expr_type(argument, symbols, functions)?,
+                            "function argument",
+                        )?;
+                    }
+                    return Ok(function.ret.clone());
                 }
-                return Ok(function.ret.clone());
             }
             for argument in args {
                 expr_type(argument, symbols, functions)?;
@@ -299,6 +303,49 @@ fn expr_type(
             }
         }
     }
+}
+
+/// Type signatures for the allocation-free text ABI emitted by every Rust
+/// backend. Generic string capacities remain part of the value type, while
+/// these operations only depend on the shared bounded-string representation.
+fn intrinsic_call_type(
+    path: &[String],
+    args: &[Expr],
+    symbols: &BTreeMap<String, Type>,
+    functions: Option<&BTreeMap<String, &Function>>,
+) -> Result<Option<Type>> {
+    if path.len() != 2 || path[0] != "Text" {
+        return Ok(None);
+    }
+    let name = path[1].as_str();
+    let expected = match name {
+        "length" => 1,
+        "byte_at" | "byte_at_u32" => 2,
+        _ => return Ok(None),
+    };
+    if args.len() != expected {
+        return Err(error(&format!(
+            "`Text.{name}` expects {expected} arguments, got {}",
+            args.len()
+        )));
+    }
+    let text = expr_type(&args[0], symbols, functions)?;
+    if !matches!(text, Type::BoundedString(_)) {
+        return Err(error(&format!(
+            "`Text.{name}` expects a bounded string, got {text:?}"
+        )));
+    }
+    if expected == 2 {
+        numeric(
+            &expr_type(&args[1], symbols, functions)?,
+            "`Text` byte index",
+        )?;
+    }
+    Ok(Some(match name {
+        "length" | "byte_at_u32" => Type::U32,
+        "byte_at" => Type::U8,
+        _ => unreachable!(),
+    }))
 }
 
 fn expect(expected: &Type, actual: Type, context: &str) -> Result<()> {
@@ -375,6 +422,30 @@ mod tests {
         )
         .unwrap();
         check(&program).unwrap();
+    }
+
+    #[test]
+    fn types_bounded_text_intrinsics() {
+        let program = lower(
+            &parse(
+                "u32 fingerprint(String[16] text) { u32 length = Text.length(text); return Text.byte_at_u32(text, length - 1); }",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        check(&program).unwrap();
+    }
+
+    #[test]
+    fn rejects_text_intrinsic_with_a_non_string() {
+        let program =
+            lower(&parse("u32 invalid(u32 value) { return Text.length(value); }").unwrap())
+                .unwrap();
+        let error = check(&program).unwrap_err();
+        assert_eq!(
+            error.message,
+            "`Text.length` expects a bounded string, got U32"
+        );
     }
 
     #[test]
