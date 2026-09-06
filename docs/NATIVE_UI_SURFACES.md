@@ -15,6 +15,9 @@ When a native toolkit removes or reparents that view, call
 `SurfaceRegistry::unembed`: the game surface and its generation-checked GPU
 target remain alive and may be embedded by another application without a
 renderer recreation.
+Before native GPU submission, adapters can call
+`RenderFrame::targets_current_surface(&surfaces)`. It rejects a frame whose
+target was invalidated by a resize, destruction, or view lifecycle transition.
 Resizing the child invalidates the target generation but preserves the native
 surface handle, allowing a toolkit to recreate only its swapchain/framebuffer.
 Destroying the application invalidates each directly embedded child as well,
