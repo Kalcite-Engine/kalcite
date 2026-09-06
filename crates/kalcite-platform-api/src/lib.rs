@@ -183,6 +183,7 @@ struct SurfaceSlot {
     target_generation: u16,
     descriptor: SurfaceDescriptor,
     parent: SurfaceId,
+    focused: SurfaceId,
     view: EmbeddedView,
 }
 
@@ -204,6 +205,7 @@ const EMPTY_SLOT: SurfaceSlot = SurfaceSlot {
     target_generation: 0,
     descriptor: EMPTY_DESCRIPTOR,
     parent: SurfaceId::INVALID,
+    focused: SurfaceId::INVALID,
     view: EMPTY_VIEW,
 };
 
@@ -240,6 +242,7 @@ impl<const N: usize> SurfaceRegistry<N> {
         slot.target_generation = 1;
         slot.descriptor = descriptor;
         slot.parent = SurfaceId::INVALID;
+        slot.focused = SurfaceId::INVALID;
         slot.view = EMPTY_VIEW;
         Ok(SurfaceId {
             slot: index as u16,
@@ -256,12 +259,17 @@ impl<const N: usize> SurfaceRegistry<N> {
             if slot.active && slot.parent == id {
                 slot.active = false;
                 slot.parent = SurfaceId::INVALID;
+                slot.focused = SurfaceId::INVALID;
                 slot.view = EMPTY_VIEW;
+            }
+            if slot.active && slot.focused == id {
+                slot.focused = SurfaceId::INVALID;
             }
         }
         let slot = self.slot_mut(id)?;
         slot.active = false;
         slot.parent = SurfaceId::INVALID;
+        slot.focused = SurfaceId::INVALID;
         slot.view = EMPTY_VIEW;
         Ok(())
     }
@@ -304,6 +312,7 @@ impl<const N: usize> SurfaceRegistry<N> {
     /// application surface, which maps directly to SwiftUI/GTK/Qt/WinUI/Kotlin
     /// view reparenting without recreating GPU state.
     pub fn unembed(&mut self, child: SurfaceId) -> Result<(), SurfaceError> {
+        let parent = self.slot(child)?.parent;
         let child_slot = self.slot_mut(child)?;
         if child_slot.descriptor.role != SurfaceRole::EmbeddedGame
             || child_slot.parent == SurfaceId::INVALID
@@ -312,7 +321,35 @@ impl<const N: usize> SurfaceRegistry<N> {
         }
         child_slot.parent = SurfaceId::INVALID;
         child_slot.view = EMPTY_VIEW;
+        if parent != SurfaceId::INVALID && self.slot(parent)?.focused == child {
+            self.slot_mut(parent)?.focused = SurfaceId::INVALID;
+        }
         Ok(())
+    }
+
+    /// Record the embedded game chosen by a native toolkit for keyboard focus.
+    pub fn focus_embedded(
+        &mut self,
+        parent: SurfaceId,
+        child: SurfaceId,
+    ) -> Result<(), SurfaceError> {
+        if self.slot(parent)?.descriptor.role != SurfaceRole::Application {
+            return Err(SurfaceError::InvalidEmbedding);
+        }
+        let child_slot = self.slot(child)?;
+        if child_slot.descriptor.role != SurfaceRole::EmbeddedGame || child_slot.parent != parent {
+            return Err(SurfaceError::InvalidEmbedding);
+        }
+        self.slot_mut(parent)?.focused = child;
+        Ok(())
+    }
+
+    pub fn focused_embedded(&self, parent: SurfaceId) -> Result<Option<SurfaceId>, SurfaceError> {
+        let parent_slot = self.slot(parent)?;
+        if parent_slot.descriptor.role != SurfaceRole::Application {
+            return Err(SurfaceError::InvalidEmbedding);
+        }
+        Ok((parent_slot.focused != SurfaceId::INVALID).then_some(parent_slot.focused))
     }
 
     pub fn gpu_target(&self, id: SurfaceId) -> Result<GpuTarget, SurfaceError> {
@@ -422,6 +459,21 @@ impl<const N: usize> SurfaceRegistry<N> {
             key,
             modifiers,
         })
+    }
+
+    /// Route a key to the adapter-selected embedded game, or retain it for UI.
+    pub fn route_focused_key(
+        &self,
+        parent: SurfaceId,
+        phase: KeyPhase,
+        key: NativeKeyCode,
+        modifiers: u16,
+    ) -> Result<Option<RoutedKeyEvent>, SurfaceError> {
+        let Some(child) = self.focused_embedded(parent)? else {
+            return Ok(None);
+        };
+        self.route_key(parent, child, phase, key, modifiers)
+            .map(Some)
     }
 
     fn slot(&self, id: SurfaceId) -> Result<&SurfaceSlot, SurfaceError> {
@@ -684,5 +736,41 @@ mod surface_tests {
             surfaces.route_key(app, standalone, KeyPhase::Release, NativeKeyCode(42), 0),
             Err(SurfaceError::InvalidEmbedding)
         );
+    }
+
+    #[test]
+    fn focused_embedded_game_routes_keys_and_clears_on_detach() {
+        let mut surfaces = SurfaceRegistry::<2>::default();
+        let app = surfaces.create(APP).unwrap();
+        let game = surfaces.create(GAME).unwrap();
+        surfaces
+            .embed(
+                app,
+                game,
+                EmbeddedView {
+                    x: 0,
+                    y: 0,
+                    width: 320,
+                    height: 240,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            surfaces.route_focused_key(app, KeyPhase::Press, NativeKeyCode(7), 0),
+            Ok(None)
+        );
+        surfaces.focus_embedded(app, game).unwrap();
+        assert_eq!(surfaces.focused_embedded(app), Ok(Some(game)));
+        assert_eq!(
+            surfaces.route_focused_key(app, KeyPhase::Press, NativeKeyCode(7), 2),
+            Ok(Some(RoutedKeyEvent {
+                surface: game,
+                phase: KeyPhase::Press,
+                key: NativeKeyCode(7),
+                modifiers: 2,
+            }))
+        );
+        surfaces.unembed(game).unwrap();
+        assert_eq!(surfaces.focused_embedded(app), Ok(None));
     }
 }
