@@ -1,4 +1,4 @@
-use kalcite_platform_api::GpuTarget;
+use kalcite_platform_api::{GpuTarget, SurfaceRegistry};
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct Camera {
@@ -83,6 +83,15 @@ impl RenderFrame {
 
     pub fn draw_calls(&self) -> u32 {
         self.commands.len() as u32
+    }
+
+    /// Whether this frame still addresses the active generation of its native
+    /// presentation surface. Platform adapters should check this at the last
+    /// possible point before submitting GPU work: a resize, destroy, or UI
+    /// reparent can invalidate a previously prepared frame without touching
+    /// the renderer's next recording queue.
+    pub fn targets_current_surface<const N: usize>(&self, surfaces: &SurfaceRegistry<N>) -> bool {
+        surfaces.accepts_gpu_target(self.target)
     }
 
     /// Replay this immutable frame into a platform GPU encoder.
@@ -311,5 +320,25 @@ mod tests {
                 EncodedEvent::End,
             ]
         );
+    }
+
+    #[test]
+    fn render_frame_rejects_a_target_invalidated_by_native_resize() {
+        use kalcite_platform_api::{SurfaceDescriptor, SurfaceRole};
+
+        let mut surfaces = SurfaceRegistry::<1>::default();
+        let surface = surfaces
+            .create(SurfaceDescriptor {
+                role: SurfaceRole::EmbeddedGame,
+                width: 320,
+                height: 240,
+                scale_x100: 100,
+            })
+            .unwrap();
+        let mut renderer = Renderer::default();
+        let frame = renderer.finish(surfaces.gpu_target(surface).unwrap());
+        assert!(frame.targets_current_surface(&surfaces));
+        surfaces.resize(surface, 640, 480).unwrap();
+        assert!(!frame.targets_current_surface(&surfaces));
     }
 }
