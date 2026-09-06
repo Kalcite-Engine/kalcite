@@ -86,14 +86,23 @@
     "body": [
       "break;"
     ],
-    "description": "Leave the innermost while loop after its local cleanup"
+    "description": "Leave the innermost loop after its local cleanup"
   },
   "Kalcite loop continue": {
     "prefix": "kl-continue",
     "body": [
       "continue;"
     ],
-    "description": "Finish the current while iteration after its local cleanup"
+    "description": "Finish the current loop iteration after its local cleanup"
+  },
+  "Kalcite fixed-array loop": {
+    "prefix": "kl-for",
+    "body": [
+      "for ${1:item} in ${2:items} {",
+      "    ${0}",
+      "}"
+    ],
+    "description": "Iterate the values of a fixed-size array"
   },
   "Native Rust block": {
     "prefix": "kl-rust",
