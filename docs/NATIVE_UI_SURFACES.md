@@ -82,7 +82,11 @@ that presentation boundary. It owns a `SurfaceRegistry`, consumes a
 `RenderFrame` only after checking its target generation, and records the
 accepted presentation metrics. Toolkit adapters should follow the same order:
 validate, encode, then present. This keeps resize races out of adapter-specific
-code and is covered by a stale-target regression test.
+code and is covered by stale-target and encoder-order regression tests.
+`encode_and_present` performs this ordering atomically at the host boundary:
+a stale target or encoder failure never records a presentation. Metal, Vulkan,
+Direct3D, OpenGL, and Skia adapters can reuse it while retaining exclusive
+ownership of their native devices and swapchains.
 
 This is an ABI foundation, not a claim that every toolkit binding is already
 implemented. Platform crates can add adapters independently while preserving
