@@ -1001,7 +1001,7 @@ fn text_intrinsic(callee: &Expr) -> bool {
         Expr::Path(path)
             if path.len() == 2
                 && path[0] == "Text"
-                && matches!(path[1].as_str(), "length" | "byte_at" | "byte_at_u32" | "equals" | "starts_with" | "contains")
+                && matches!(path[1].as_str(), "length" | "byte_at" | "byte_at_u32" | "equals" | "starts_with" | "ends_with" | "contains")
     )
 }
 
@@ -1389,6 +1389,16 @@ mod tests {
         );
         assert!(
             output.contains("Text::starts_with(source, BoundedString::<4>::from_str(\"git:\"))")
+        );
+    }
+
+    #[test]
+    fn materializes_suffix_literals_for_library_intrinsics() {
+        let output = emitted_library(
+            "public bool scene_file(String[64] file_name) { return Text.ends_with(file_name, \".kscn\"); }",
+        );
+        assert!(
+            output.contains("Text::ends_with(file_name, BoundedString::<5>::from_str(\".kscn\"))")
         );
     }
 
