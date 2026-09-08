@@ -118,6 +118,13 @@
     ],
     "description": "Test a bounded text prefix with a fixed string literal without allocation"
   },
+  "Kalcite bounded text containment": {
+    "prefix": "kl-text-contains",
+    "body": [
+      "Text.contains(${1:value}, \"${2:needle}\")"
+    ],
+    "description": "Search bounded text for a fixed string literal without allocation"
+  },
   "Native Rust block": {
     "prefix": "kl-rust",
     "body": [

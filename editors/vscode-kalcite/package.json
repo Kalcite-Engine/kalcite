@@ -2,7 +2,7 @@
   "name": "kalcite-language",
   "displayName": "Kalcite Language",
   "description": "Kalcite syntax support and language-server integration for .klc files.",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "publisher": "kalcite",
   "main": "./src/extension.js",
   "engines": {
