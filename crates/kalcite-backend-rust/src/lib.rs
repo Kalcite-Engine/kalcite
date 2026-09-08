@@ -583,8 +583,7 @@ fn emit_class(out: &mut String, program: &Program, class: &Class) {
         out.push_str(&format!("){ret} {{\n"));
         emit_body(
             out,
-            program,
-            class,
+            EmitContext { program, class },
             &function.body,
             &mut scope,
             2,
@@ -665,16 +664,22 @@ fn signal_payload(program: &Program, signal: &kalcite_hir::Signal) -> String {
     }
 }
 
+#[derive(Clone, Copy)]
+struct EmitContext<'a> {
+    program: &'a Program,
+    class: &'a Class,
+}
+
 fn emit_body<'a>(
     out: &mut String,
-    program: &Program,
-    class: &Class,
+    context: EmitContext<'_>,
     body: &'a [Stmt],
     scope: &mut HashSet<String>,
     depth: usize,
     inherited_defers: &[&'a Expr],
     loop_cleanup_start: Option<usize>,
 ) {
+    let EmitContext { program, class } = context;
     let mut local_defers = Vec::new();
     for statement in body {
         if let Stmt::Defer(expression) = statement {
@@ -685,8 +690,7 @@ fn emit_body<'a>(
         active_defers.extend(local_defers.iter().copied());
         stmt(
             out,
-            program,
-            class,
+            context,
             statement,
             scope,
             depth,
@@ -721,14 +725,14 @@ fn emit_deferred(
 
 fn stmt(
     out: &mut String,
-    program: &Program,
-    class: &Class,
+    context: EmitContext<'_>,
     statement: &Stmt,
     scope: &mut HashSet<String>,
     depth: usize,
     active_defers: &[&Expr],
     loop_cleanup_start: Option<usize>,
 ) {
+    let EmitContext { program, class } = context;
     let indent = "    ".repeat(depth);
     match statement {
         Stmt::Expr(e) => {
@@ -783,8 +787,7 @@ fn stmt(
             let mut then_scope = scope.clone();
             emit_body(
                 out,
-                program,
-                class,
+                context,
                 then_body,
                 &mut then_scope,
                 depth + 1,
@@ -797,8 +800,7 @@ fn stmt(
                 let mut else_scope = scope.clone();
                 emit_body(
                     out,
-                    program,
-                    class,
+                    context,
                     else_body,
                     &mut else_scope,
                     depth + 1,
@@ -817,8 +819,7 @@ fn stmt(
             let mut body_scope = scope.clone();
             emit_body(
                 out,
-                program,
-                class,
+                context,
                 body,
                 &mut body_scope,
                 depth + 1,
@@ -840,8 +841,7 @@ fn stmt(
             loop_scope.insert(binding.clone());
             emit_body(
                 out,
-                program,
-                class,
+                context,
                 body,
                 &mut loop_scope,
                 depth + 1,
@@ -956,10 +956,11 @@ fn expr(program: &Program, class: &Class, expression: &Expr, scope: &HashSet<Str
                 if path.len() == 1 && path[0] == "Vec2fx" {
                     return format!("Vec2fx::new({args})");
                 }
-                if path.len() == 2 && path[1] == "new" {
-                    if let Some(class_name) = program.resolve_class_name(&path[0]) {
-                        return format!("{class_name}::new({args})");
-                    }
+                if path.len() == 2
+                    && path[1] == "new"
+                    && let Some(class_name) = program.resolve_class_name(&path[0])
+                {
+                    return format!("{class_name}::new({args})");
                 }
                 let callee = render_path(program, class, path, scope);
                 format!("{callee}({args})")
