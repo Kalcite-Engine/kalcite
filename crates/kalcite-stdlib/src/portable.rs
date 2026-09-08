@@ -35,6 +35,12 @@ impl Text {
         let length = prefix.len as usize;
         value.len >= prefix.len && value.bytes[..length] == prefix.bytes[..length]
     }
+    #[inline] pub fn ends_with<const L: usize, const R: usize>(value: BoundedString<L>, suffix: BoundedString<R>) -> bool {
+        let suffix_length = suffix.len as usize;
+        let value_length = value.len as usize;
+        value_length >= suffix_length
+            && value.bytes[value_length - suffix_length..value_length] == suffix.bytes[..suffix_length]
+    }
     #[inline] pub fn contains<const L: usize, const R: usize>(value: BoundedString<L>, needle: BoundedString<R>) -> bool {
         let needle_length = needle.len as usize;
         let value_length = value.len as usize;
@@ -58,6 +64,9 @@ mod text_tests {
         assert!(Text::contains(node_type, BoundedString::<9>::from_str("Collision")));
         assert!(!Text::contains(node_type, BoundedString::<6>::from_str("Button")));
         assert!(Text::contains(node_type, BoundedString::<1>::from_str("")));
+        assert!(Text::ends_with(node_type, BoundedString::<2>::from_str("2D")));
+        assert!(!Text::ends_with(node_type, BoundedString::<6>::from_str("Button")));
+        assert!(Text::ends_with(node_type, BoundedString::<1>::from_str("")));
     }
 }
 
