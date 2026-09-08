@@ -77,6 +77,11 @@ The adapter validates `GpuTarget` immediately before this replay, then owns
 the device submission and presentation lifetime. This keeps the common
 renderer API portable while allowing each backend to use its native fast path.
 
+Every `RenderFrame` also carries a byte-precise RGBA `ClearColor` (opaque black
+by default). `begin_frame` receives it with the target and camera, so an
+adapter can begin the native render pass without inventing a toolkit-specific
+background policy or using floating-point colour conversions.
+
 `kalcite-platform-headless::NativeSurfaceHost` is the executable reference for
 that presentation boundary. It owns a `SurfaceRegistry`, consumes a
 `RenderFrame` only after checking its target generation, and records the

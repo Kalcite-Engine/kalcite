@@ -5,6 +5,27 @@ pub struct Camera {
     pub x: i32,
     pub y: i32,
 }
+
+/// Explicit RGBA clear value for one immutable GPU frame. Keeping this as
+/// bytes makes the render ABI portable across fixed-point and native targets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClearColor {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+    pub alpha: u8,
+}
+
+impl Default for ClearColor {
+    fn default() -> Self {
+        Self {
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: u8::MAX,
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sprite {
     pub asset: u64,
@@ -49,7 +70,12 @@ pub trait RenderFrameEncoder {
     type Error;
 
     /// Start encoding a frame for the supplied generation-checked target.
-    fn begin_frame(&mut self, target: GpuTarget, camera: Camera) -> Result<(), Self::Error>;
+    fn begin_frame(
+        &mut self,
+        target: GpuTarget,
+        camera: Camera,
+        clear: ClearColor,
+    ) -> Result<(), Self::Error>;
 
     /// Encode one sorted Kalcite draw command.
     fn draw_command(&mut self, command: DrawCommand) -> Result<(), Self::Error>;
@@ -65,6 +91,7 @@ pub trait RenderFrameEncoder {
 pub struct RenderFrame {
     target: GpuTarget,
     camera: Camera,
+    clear: ClearColor,
     commands: Vec<DrawCommand>,
 }
 
@@ -75,6 +102,10 @@ impl RenderFrame {
 
     pub fn camera(&self) -> Camera {
         self.camera
+    }
+
+    pub fn clear_color(&self) -> ClearColor {
+        self.clear
     }
 
     pub fn commands(&self) -> &[DrawCommand] {
@@ -100,7 +131,7 @@ impl RenderFrame {
     /// before calling this method. Commands are delivered in the stable layer
     /// order established by [`Renderer::finish`].
     pub fn encode<E: RenderFrameEncoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
-        encoder.begin_frame(self.target, self.camera)?;
+        encoder.begin_frame(self.target, self.camera, self.clear)?;
         for command in &self.commands {
             encoder.draw_command(*command)?;
         }
@@ -110,6 +141,7 @@ impl RenderFrame {
 #[derive(Default)]
 pub struct Renderer {
     pub camera: Camera,
+    clear: ClearColor,
     queue: Vec<DrawCommand>,
 }
 impl Renderer {
@@ -124,6 +156,9 @@ impl Renderer {
     }
     pub fn set_camera(&mut self, x: i32, y: i32) {
         self.camera = Camera { x, y };
+    }
+    pub fn set_clear_color(&mut self, clear: ClearColor) {
+        self.clear = clear;
     }
     pub fn sorted(&mut self) -> &[DrawCommand] {
         self.queue.sort_by_key(|c| match c {
@@ -154,6 +189,7 @@ impl Renderer {
         RenderFrame {
             target,
             camera: self.camera,
+            clear: self.clear,
             commands: core::mem::take(&mut self.queue),
         }
     }
@@ -234,6 +270,7 @@ mod tests {
         let frame = renderer.finish(target);
         assert_eq!(renderer.draw_calls(), 0);
         assert_eq!(frame.target(), target);
+        assert_eq!(frame.clear_color(), ClearColor::default());
         assert!(matches!(
             frame.commands(),
             [
@@ -245,7 +282,7 @@ mod tests {
 
     #[derive(Debug, PartialEq, Eq)]
     enum EncodedEvent {
-        Begin(GpuTarget, Camera),
+        Begin(GpuTarget, Camera, ClearColor),
         Draw(DrawCommand),
         End,
     }
@@ -258,8 +295,13 @@ mod tests {
     impl RenderFrameEncoder for RecordingEncoder {
         type Error = core::convert::Infallible;
 
-        fn begin_frame(&mut self, target: GpuTarget, camera: Camera) -> Result<(), Self::Error> {
-            self.events.push(EncodedEvent::Begin(target, camera));
+        fn begin_frame(
+            &mut self,
+            target: GpuTarget,
+            camera: Camera,
+            clear: ClearColor,
+        ) -> Result<(), Self::Error> {
+            self.events.push(EncodedEvent::Begin(target, camera, clear));
             Ok(())
         }
 
@@ -284,6 +326,12 @@ mod tests {
         };
         let mut renderer = Renderer::default();
         renderer.set_camera(12, -4);
+        renderer.set_clear_color(ClearColor {
+            red: 7,
+            green: 8,
+            blue: 9,
+            alpha: 255,
+        });
         renderer.push(Sprite {
             asset: 2,
             x: 8,
@@ -304,7 +352,16 @@ mod tests {
         assert_eq!(
             encoder.events,
             vec![
-                EncodedEvent::Begin(target, Camera { x: 12, y: -4 }),
+                EncodedEvent::Begin(
+                    target,
+                    Camera { x: 12, y: -4 },
+                    ClearColor {
+                        red: 7,
+                        green: 8,
+                        blue: 9,
+                        alpha: 255,
+                    }
+                ),
                 EncodedEvent::Draw(DrawCommand::Sprite(Sprite {
                     asset: 1,
                     x: 3,
