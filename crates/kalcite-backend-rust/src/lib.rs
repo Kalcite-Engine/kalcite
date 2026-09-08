@@ -1000,7 +1000,7 @@ fn text_intrinsic(callee: &Expr) -> bool {
         Expr::Path(path)
             if path.len() == 2
                 && path[0] == "Text"
-                && matches!(path[1].as_str(), "length" | "byte_at" | "byte_at_u32" | "equals" | "starts_with")
+                && matches!(path[1].as_str(), "length" | "byte_at" | "byte_at_u32" | "equals" | "starts_with" | "contains")
     )
 }
 
@@ -1388,6 +1388,17 @@ mod tests {
         );
         assert!(
             output.contains("Text::starts_with(source, BoundedString::<4>::from_str(\"git:\"))")
+        );
+    }
+
+    #[test]
+    fn materializes_contains_literals_for_library_intrinsics() {
+        let output = emitted_library(
+            "public bool collision(String[64] node_type) { return Text.contains(node_type, \"Collision\"); }",
+        );
+        assert!(
+            output
+                .contains("Text::contains(node_type, BoundedString::<9>::from_str(\"Collision\"))")
         );
     }
     #[test]

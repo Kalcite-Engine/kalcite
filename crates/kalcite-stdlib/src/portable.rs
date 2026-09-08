@@ -35,6 +35,30 @@ impl Text {
         let length = prefix.len as usize;
         value.len >= prefix.len && value.bytes[..length] == prefix.bytes[..length]
     }
+    #[inline] pub fn contains<const L: usize, const R: usize>(value: BoundedString<L>, needle: BoundedString<R>) -> bool {
+        let needle_length = needle.len as usize;
+        let value_length = value.len as usize;
+        if needle_length == 0 { return true; }
+        if needle_length > value_length { return false; }
+        for start in 0..=value_length - needle_length {
+            if value.bytes[start..start + needle_length] == needle.bytes[..needle_length] { return true; }
+        }
+        false
+    }
+}
+
+#[cfg(test)]
+mod text_tests {
+    use super::{BoundedString, Text};
+
+    #[test]
+    fn contains_scans_only_the_used_bytes() {
+        let node_type = BoundedString::<64>::from_str("CollisionShape2D");
+
+        assert!(Text::contains(node_type, BoundedString::<9>::from_str("Collision")));
+        assert!(!Text::contains(node_type, BoundedString::<6>::from_str("Button")));
+        assert!(Text::contains(node_type, BoundedString::<1>::from_str("")));
+    }
 }
 
 pub struct Math;
