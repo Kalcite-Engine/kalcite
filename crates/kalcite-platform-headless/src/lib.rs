@@ -136,7 +136,7 @@ impl<const N: usize> Platform for Headless<N> {
 mod tests {
     use super::*;
     use kalcite_platform_api::{SurfaceDescriptor, SurfaceRole};
-    use kalcite_renderer::{Camera, DrawCommand, Renderer, Sprite};
+    use kalcite_renderer::{Camera, ClearColor, DrawCommand, Renderer, Sprite};
 
     const EMBEDDED_GAME: SurfaceDescriptor = SurfaceDescriptor {
         role: SurfaceRole::EmbeddedGame,
@@ -155,7 +155,12 @@ mod tests {
     impl RenderFrameEncoder for CountingEncoder {
         type Error = ();
 
-        fn begin_frame(&mut self, _: GpuTarget, _: Camera) -> Result<(), Self::Error> {
+        fn begin_frame(
+            &mut self,
+            _: GpuTarget,
+            _: Camera,
+            _: ClearColor,
+        ) -> Result<(), Self::Error> {
             self.began += 1;
             Ok(())
         }
