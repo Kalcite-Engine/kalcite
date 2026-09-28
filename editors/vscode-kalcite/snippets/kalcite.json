@@ -132,6 +132,13 @@
     ],
     "description": "Find the first bounded text index for a fixed string literal; returns -1 when absent"
   },
+  "Kalcite bounded text reverse index": {
+    "prefix": "kl-text-last-index-of",
+    "body": [
+      "Text.last_index_of(${1:value}, \"${2:needle}\")"
+    ],
+    "description": "Find the final bounded text index for a fixed string literal; returns -1 when absent"
+  },
   "Kalcite bounded text suffix": {
     "prefix": "kl-text-ends-with",
     "body": [
