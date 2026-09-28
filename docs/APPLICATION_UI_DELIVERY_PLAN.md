@@ -32,7 +32,7 @@ adapter.
 | Resizable DPI-aware UI surface | Planned | Desktop backend | `ui` profile opens a resizable surface; logical game viewport remains unchanged for `game2d`. |
 | Adaptive layout | Planned | Scene layout compiler | Stack, grid, flex, anchors, min/max, padding, alignment, and clipping have deterministic tests. |
 | Text pipeline | Planned | Engine assets and renderer | Compiled font asset, wrapping, ellipsis, fallback glyphs, and measured layout work without per-frame heap allocation. |
-| Unified input and focus | Planned | Platform API and scene runtime | Pointer, keyboard, gamepad, and touch produce typed UI events; controls remain keyboard usable. The current embedded-surface ABI routes press, move, release, and explicit cancel events with bounded capture; full toolkit adapters remain planned. |
+| Unified input and focus | Planned | Platform API and scene runtime | Pointer, keyboard, gamepad, and touch produce typed UI events; controls remain keyboard usable. The current embedded-surface ABI routes press, move, release, and explicit cancel events with bounded capture; uncaptured cancellations are ignored rather than hit-tested. Full toolkit adapters remain planned. |
 | Dirty invalidation | Planned | Renderer | Region invalidation produces the same pixels as a forced full redraw; overflow uses full redraw. |
 | Accessibility | Planned | Scene metadata and desktop adapter | Role/name/value/state/focus/action metadata is emitted for every supported control. |
 | Styles and transitions | Planned | Scene compiler and renderer | Unsupported constrained-target effects fail or use a documented fallback. |
