@@ -1001,7 +1001,7 @@ fn text_intrinsic(callee: &Expr) -> bool {
         Expr::Path(path)
             if path.len() == 2
                 && path[0] == "Text"
-                && matches!(path[1].as_str(), "length" | "byte_at" | "byte_at_u32" | "equals" | "starts_with" | "ends_with" | "contains" | "index_of")
+                && matches!(path[1].as_str(), "length" | "byte_at" | "byte_at_u32" | "equals" | "starts_with" | "ends_with" | "contains" | "index_of" | "last_index_of")
     )
 }
 
@@ -1419,6 +1419,14 @@ mod tests {
             "public i32 separator(String[64] line) { return Text.index_of(line, \"=\"); }",
         );
         assert!(output.contains("Text::index_of(line, BoundedString::<1>::from_str(\"=\"))"));
+    }
+
+    #[test]
+    fn materializes_reverse_index_literals_for_library_intrinsics() {
+        let output = emitted_library(
+            "public i32 directory(String[128] path) { return Text.last_index_of(path, \"/\"); }",
+        );
+        assert!(output.contains("Text::last_index_of(path, BoundedString::<1>::from_str(\"/\"))"));
     }
     #[test]
     fn emits_hardware_and_text_builtins() {
