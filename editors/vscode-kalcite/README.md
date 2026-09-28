@@ -17,6 +17,9 @@ allocation-free `Text.contains(value, "needle")` search.
 `kl-text-index-of` inserts allocation-free
 `Text.index_of(value, "needle")` lookup, returning the first index or `-1`
 when the needle is absent.
+`kl-text-last-index-of` inserts allocation-free
+`Text.last_index_of(value, "needle")` lookup, returning the final index or
+`-1` when the needle is absent.
 `kl-text-ends-with` inserts allocation-free
 `Text.ends_with(value, "suffix")` comparison.
 
