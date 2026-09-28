@@ -477,9 +477,11 @@ impl<const N: usize> SurfaceRegistry<N> {
     /// surface. A press inside an embedded game captures subsequent movement
     /// release, and cancellation events for that game even outside its
     /// rectangle; those outside coordinates are clamped to the game edge.
-    /// Release and cancellation both clear capture. This keeps native drag
-    /// semantics consistent across SwiftUI, GTK, Qt, WinUI, and Kotlin
-    /// without importing their event systems.
+    /// Release and cancellation both clear capture. Unlike release, a cancel
+    /// with no active capture is ignored rather than hit-tested: it represents
+    /// a native gesture being revoked, never a new gesture over a view. This
+    /// keeps native drag semantics consistent across SwiftUI, GTK, Qt, WinUI,
+    /// and Kotlin without importing their event systems.
     pub fn route_pointer_captured(
         &mut self,
         parent: SurfaceId,
@@ -497,18 +499,14 @@ impl<const N: usize> SurfaceRegistry<N> {
                 self.slot_mut(parent)?.captured = hit.unwrap_or(SurfaceId::INVALID);
                 hit
             }
-            PointerPhase::Move | PointerPhase::Release | PointerPhase::Cancel => {
-                let captured = self.slot(parent)?.captured;
-                if captured != SurfaceId::INVALID
-                    && self.slot(captured).is_ok_and(|slot| {
-                        slot.parent == parent && slot.descriptor.role == SurfaceRole::EmbeddedGame
-                    })
-                {
+            PointerPhase::Move | PointerPhase::Release => {
+                if let Some(captured) = self.captured_embedded(parent)? {
                     Some(captured)
                 } else {
                     self.embedded_at(parent, x, y)?
                 }
             }
+            PointerPhase::Cancel => self.captured_embedded(parent)?,
         };
         let Some(surface) = surface else {
             return Ok(None);
@@ -528,6 +526,19 @@ impl<const N: usize> SurfaceRegistry<N> {
             self.slot_mut(parent)?.captured = SurfaceId::INVALID;
         }
         Ok(Some(event))
+    }
+
+    fn captured_embedded(&self, parent: SurfaceId) -> Result<Option<SurfaceId>, SurfaceError> {
+        let captured = self.slot(parent)?.captured;
+        if captured != SurfaceId::INVALID
+            && self.slot(captured).is_ok_and(|slot| {
+                slot.parent == parent && slot.descriptor.role == SurfaceRole::EmbeddedGame
+            })
+        {
+            Ok(Some(captured))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Route a keyboard event to a focused directly embedded game view.
@@ -888,6 +899,30 @@ mod surface_tests {
         );
         assert_eq!(
             surfaces.route_pointer_captured(app, PointerPhase::Move, 700, 600, 0),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn uncaptured_pointer_cancel_is_not_hit_tested_as_a_new_gesture() {
+        let mut surfaces = SurfaceRegistry::<2>::default();
+        let app = surfaces.create(APP).unwrap();
+        let game = surfaces.create(GAME).unwrap();
+        surfaces
+            .embed(
+                app,
+                game,
+                EmbeddedView {
+                    x: 0,
+                    y: 0,
+                    width: 640,
+                    height: 480,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            surfaces.route_pointer_captured(app, PointerPhase::Cancel, 320, 240, 0),
             Ok(None)
         );
     }
