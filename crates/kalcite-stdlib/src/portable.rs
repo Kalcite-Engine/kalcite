@@ -64,6 +64,19 @@ impl Text {
         }
         -1
     }
+    /// Return the final used-byte index of `needle`, or -1 when it is absent.
+    /// An empty needle is found at the end of the used text, matching the
+    /// conventional reverse-search boundary without touching unused capacity.
+    #[inline] pub fn last_index_of<const L: usize, const R: usize>(value: BoundedString<L>, needle: BoundedString<R>) -> i32 {
+        let needle_length = needle.len as usize;
+        let value_length = value.len as usize;
+        if needle_length == 0 { return value_length as i32; }
+        if needle_length > value_length { return -1; }
+        for start in (0..=value_length - needle_length).rev() {
+            if value.bytes[start..start + needle_length] == needle.bytes[..needle_length] { return start as i32; }
+        }
+        -1
+    }
 }
 
 #[cfg(test)]
@@ -83,6 +96,11 @@ mod text_tests {
         assert_eq!(Text::index_of(node_type, BoundedString::<5>::from_str("Shape")), 9);
         assert_eq!(Text::index_of(node_type, BoundedString::<6>::from_str("Button")), -1);
         assert_eq!(Text::index_of(node_type, BoundedString::<1>::from_str("")), 0);
+        let path = BoundedString::<64>::from_str("assets/ui/button.kscn");
+        assert_eq!(Text::last_index_of(path, BoundedString::<1>::from_str("/")), 9);
+        assert_eq!(Text::last_index_of(path, BoundedString::<5>::from_str(".kscn")), 16);
+        assert_eq!(Text::last_index_of(path, BoundedString::<1>::from_str("")), 21);
+        assert_eq!(Text::last_index_of(path, BoundedString::<6>::from_str("Button")), -1);
     }
 }
 
