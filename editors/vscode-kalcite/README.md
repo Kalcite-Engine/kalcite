@@ -14,6 +14,9 @@ inserts allocation-free `Text.equals(value, "literal")` comparison, and
 `kl-text-starts-with` inserts allocation-free
 `Text.starts_with(value, "prefix")` comparison, and `kl-text-contains` inserts
 allocation-free `Text.contains(value, "needle")` search.
+`kl-text-index-of` inserts allocation-free
+`Text.index_of(value, "needle")` lookup, returning the first index or `-1`
+when the needle is absent.
 `kl-text-ends-with` inserts allocation-free
 `Text.ends_with(value, "suffix")` comparison.
 

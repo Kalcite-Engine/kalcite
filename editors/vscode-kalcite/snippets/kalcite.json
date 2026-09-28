@@ -125,6 +125,13 @@
     ],
     "description": "Search bounded text for a fixed string literal without allocation"
   },
+  "Kalcite bounded text index": {
+    "prefix": "kl-text-index-of",
+    "body": [
+      "Text.index_of(${1:value}, \"${2:needle}\")"
+    ],
+    "description": "Find the first bounded text index for a fixed string literal; returns -1 when absent"
+  },
   "Kalcite bounded text suffix": {
     "prefix": "kl-text-ends-with",
     "body": [
