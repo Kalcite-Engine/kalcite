@@ -321,7 +321,7 @@ fn intrinsic_call_type(
     let expected = match name {
         "length" => 1,
         "byte_at" | "byte_at_u32" => 2,
-        "equals" | "starts_with" | "ends_with" | "contains" => 2,
+        "equals" | "starts_with" | "ends_with" | "contains" | "index_of" => 2,
         _ => return Ok(None),
     };
     if args.len() != expected {
@@ -338,7 +338,10 @@ fn intrinsic_call_type(
     }
     if expected == 2 {
         let second = expr_type(&args[1], symbols, functions)?;
-        if matches!(name, "equals" | "starts_with" | "ends_with" | "contains") {
+        if matches!(
+            name,
+            "equals" | "starts_with" | "ends_with" | "contains" | "index_of"
+        ) {
             if !matches!(second, Type::BoundedString(_)) {
                 return Err(error(&format!(
                     "`Text.{name}` expects a bounded string, got {second:?}"
@@ -352,6 +355,7 @@ fn intrinsic_call_type(
         "length" | "byte_at_u32" => Type::U32,
         "byte_at" => Type::U8,
         "equals" | "starts_with" | "ends_with" | "contains" => Type::Bool,
+        "index_of" => Type::I32,
         _ => unreachable!(),
     }))
 }
@@ -508,6 +512,16 @@ mod tests {
                 "bool scene_file(String[64] file_name) { return Text.ends_with(file_name, \".kscn\"); }",
             )
             .unwrap(),
+        )
+        .unwrap();
+        check(&program).unwrap();
+    }
+
+    #[test]
+    fn types_text_index_with_a_literal() {
+        let program = lower(
+            &parse("i32 separator(String[64] line) { return Text.index_of(line, \"=\"); }")
+                .unwrap(),
         )
         .unwrap();
         check(&program).unwrap();

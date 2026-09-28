@@ -51,6 +51,19 @@ impl Text {
         }
         false
     }
+    /// Return the first used-byte index of `needle`, or -1 when it is absent.
+    /// An empty needle is found at index zero, matching the other bounded text
+    /// predicates without allocating or scanning unused capacity.
+    #[inline] pub fn index_of<const L: usize, const R: usize>(value: BoundedString<L>, needle: BoundedString<R>) -> i32 {
+        let needle_length = needle.len as usize;
+        let value_length = value.len as usize;
+        if needle_length == 0 { return 0; }
+        if needle_length > value_length { return -1; }
+        for start in 0..=value_length - needle_length {
+            if value.bytes[start..start + needle_length] == needle.bytes[..needle_length] { return start as i32; }
+        }
+        -1
+    }
 }
 
 #[cfg(test)]
@@ -67,6 +80,9 @@ mod text_tests {
         assert!(Text::ends_with(node_type, BoundedString::<2>::from_str("2D")));
         assert!(!Text::ends_with(node_type, BoundedString::<6>::from_str("Button")));
         assert!(Text::ends_with(node_type, BoundedString::<1>::from_str("")));
+        assert_eq!(Text::index_of(node_type, BoundedString::<5>::from_str("Shape")), 9);
+        assert_eq!(Text::index_of(node_type, BoundedString::<6>::from_str("Button")), -1);
+        assert_eq!(Text::index_of(node_type, BoundedString::<1>::from_str("")), 0);
     }
 }
 

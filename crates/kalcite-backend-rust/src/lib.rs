@@ -1001,7 +1001,7 @@ fn text_intrinsic(callee: &Expr) -> bool {
         Expr::Path(path)
             if path.len() == 2
                 && path[0] == "Text"
-                && matches!(path[1].as_str(), "length" | "byte_at" | "byte_at_u32" | "equals" | "starts_with" | "ends_with" | "contains")
+                && matches!(path[1].as_str(), "length" | "byte_at" | "byte_at_u32" | "equals" | "starts_with" | "ends_with" | "contains" | "index_of")
     )
 }
 
@@ -1411,6 +1411,14 @@ mod tests {
             output
                 .contains("Text::contains(node_type, BoundedString::<9>::from_str(\"Collision\"))")
         );
+    }
+
+    #[test]
+    fn materializes_index_literals_for_library_intrinsics() {
+        let output = emitted_library(
+            "public i32 separator(String[64] line) { return Text.index_of(line, \"=\"); }",
+        );
+        assert!(output.contains("Text::index_of(line, BoundedString::<1>::from_str(\"=\"))"));
     }
     #[test]
     fn emits_hardware_and_text_builtins() {
