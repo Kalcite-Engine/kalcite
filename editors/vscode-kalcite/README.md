@@ -14,6 +14,8 @@ inserts allocation-free `Text.equals(value, "literal")` comparison, and
 `kl-text-starts-with` inserts allocation-free
 `Text.starts_with(value, "prefix")` comparison, and `kl-text-contains` inserts
 allocation-free `Text.contains(value, "needle")` search.
+`kl-text-ends-with` inserts allocation-free
+`Text.ends_with(value, "suffix")` comparison.
 
 Override `kalcite.languageServer.path` when the binary is not on `PATH`; use
 `kalcite.languageServer.args` to supply server arguments. The extension keeps
