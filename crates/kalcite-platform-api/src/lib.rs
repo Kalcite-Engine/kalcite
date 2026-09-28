@@ -142,6 +142,10 @@ pub enum PointerPhase {
     Move,
     Press,
     Release,
+    /// The native toolkit revoked pointer capture or cancelled the gesture.
+    /// Adapters must not turn this into a release because the game may need to
+    /// discard an in-progress drag rather than commit it.
+    Cancel,
 }
 
 /// A pointer event routed into an embedded game's logical pixel space.
@@ -471,9 +475,10 @@ impl<const N: usize> SurfaceRegistry<N> {
 
     /// Route a pointer event with one captured pointer per application
     /// surface. A press inside an embedded game captures subsequent movement
-    /// and release events for that game even outside its rectangle; those
-    /// outside coordinates are clamped to the game edge. This keeps native
-    /// drag semantics consistent across SwiftUI, GTK, Qt, WinUI, and Kotlin
+    /// release, and cancellation events for that game even outside its
+    /// rectangle; those outside coordinates are clamped to the game edge.
+    /// Release and cancellation both clear capture. This keeps native drag
+    /// semantics consistent across SwiftUI, GTK, Qt, WinUI, and Kotlin
     /// without importing their event systems.
     pub fn route_pointer_captured(
         &mut self,
@@ -492,7 +497,7 @@ impl<const N: usize> SurfaceRegistry<N> {
                 self.slot_mut(parent)?.captured = hit.unwrap_or(SurfaceId::INVALID);
                 hit
             }
-            PointerPhase::Move | PointerPhase::Release => {
+            PointerPhase::Move | PointerPhase::Release | PointerPhase::Cancel => {
                 let captured = self.slot(parent)?.captured;
                 if captured != SurfaceId::INVALID
                     && self.slot(captured).is_ok_and(|slot| {
@@ -519,7 +524,7 @@ impl<const N: usize> SurfaceRegistry<N> {
             y,
             button,
         };
-        if phase == PointerPhase::Release {
+        if matches!(phase, PointerPhase::Release | PointerPhase::Cancel) {
             self.slot_mut(parent)?.captured = SurfaceId::INVALID;
         }
         Ok(Some(event))
@@ -842,6 +847,43 @@ mod surface_tests {
                 x: 0,
                 y: 0,
                 button: 1,
+            }))
+        );
+        assert_eq!(
+            surfaces.route_pointer_captured(app, PointerPhase::Move, 700, 600, 0),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn captured_pointer_cancel_is_routed_and_clears_capture() {
+        let mut surfaces = SurfaceRegistry::<2>::default();
+        let app = surfaces.create(APP).unwrap();
+        let game = surfaces.create(GAME).unwrap();
+        surfaces
+            .embed(
+                app,
+                game,
+                EmbeddedView {
+                    x: 0,
+                    y: 0,
+                    width: 640,
+                    height: 480,
+                },
+            )
+            .unwrap();
+
+        surfaces
+            .route_pointer_captured(app, PointerPhase::Press, 320, 240, 1)
+            .unwrap();
+        assert_eq!(
+            surfaces.route_pointer_captured(app, PointerPhase::Cancel, 700, 600, 0),
+            Ok(Some(RoutedPointerEvent {
+                surface: game,
+                phase: PointerPhase::Cancel,
+                x: 319,
+                y: 239,
+                button: 0,
             }))
         );
         assert_eq!(
